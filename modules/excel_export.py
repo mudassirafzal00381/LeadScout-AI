@@ -98,6 +98,38 @@ def _resolve_path(filename: str) -> Path:
     return path
 
 
+def _add_about_sheet(wb: Workbook, category: str, location: str) -> None:
+    """Second sheet: search details, data sources and the required OSM attribution."""
+    ws = wb.create_sheet("About")
+    rows = [
+        ("LeadScout AI - lead export", None),
+        ("", None),
+        ("Search", f"{category.replace('_', ' ') or 'all'} in {location or '-'}"),
+        ("Generated", datetime.now().strftime("%Y-%m-%d %H:%M")),
+        ("", None),
+        ("Data sources", None),
+        ("OpenStreetMap", "Map data © OpenStreetMap contributors, available under the "
+                          "Open Database License (ODbL): https://www.openstreetmap.org/copyright"),
+        ("Google Maps", "Public business listings, collected in small numbers for reference."),
+        ("Websites", "Social media links and emails found on each business's own homepage."),
+        ("", None),
+        ("Colour legend", None),
+        ("Red cell", "Key gap: no phone number, or no real website (none, or only a social page)."),
+        ("Orange cell", "Other missing info (email, social profiles, address) or a broken website."),
+        ("Lead Score", "0-100. Higher = more gaps = more services you could offer."),
+    ]
+    for label, value in rows:
+        ws.append([label, value])
+    ws["A1"].font = Font(bold=True, size=14)
+    for cell in ("A6", "A11"):
+        ws[cell].font = Font(bold=True)
+    ws["A12"].fill, ws["A13"].fill = MISSING_RED, MISSING_ORANGE
+    ws.column_dimensions["A"].width = 18
+    ws.column_dimensions["B"].width = 100
+    for row in ws.iter_rows(min_row=2):
+        row[1].alignment = Alignment(wrap_text=True, vertical="top")
+
+
 def _sort_key(b: dict):
     score = b.get("lead_score")
     return (score is not None, score or 0)
@@ -203,6 +235,8 @@ def export_to_excel(business_list: list[dict], filename: str | None = None, *,
                        mid_type="num", mid_value=50, mid_color="FFD966",
                        end_type="num", end_value=100, end_color="F8696B"),
     )
+
+    _add_about_sheet(wb, category, location)
 
     path = _resolve_path(filename)
     try:

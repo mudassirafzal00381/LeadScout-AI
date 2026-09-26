@@ -1,8 +1,14 @@
-"""LeadScout AI - local web interface.
+"""LeadScout AI - web interface.
 
 Run with:  streamlit run app.py
+
+If the LEADSCOUT_PASSWORD environment variable is set (e.g. as a secret on a
+hosted copy), visitors must enter it before using the app. Locally it is
+normally unset, so no login is needed.
 """
 
+import hmac
+import os
 import time
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +51,45 @@ def _logging_ready() -> Path | None:
 LOG_PATH = _logging_ready()
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("current", None)
+# Hugging Face Spaces sets SPACE_ID; used to show hosting-specific notes.
+HOSTED = bool(os.environ.get("SPACE_ID"))
+
+
+# --- Password gate -----------------------------------------------------------
+
+def _require_password() -> None:
+    """Show a login form and stop the page until the right password is entered."""
+    password = config.APP_PASSWORD
+    if not password or st.session_state.get("authenticated"):
+        return
+
+    st.title("LeadScout AI")
+    st.caption("This copy of LeadScout AI is private. Please enter the password.")
+    failures = st.session_state.get("login_failures", 0)
+    locked_until = st.session_state.get("locked_until", 0.0)
+    if time.time() < locked_until:
+        st.error(f"Too many wrong attempts. Try again in {int(locked_until - time.time())} seconds.")
+        st.stop()
+
+    with st.form("login"):
+        attempt = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Log in", type="primary")
+    if submitted:
+        if hmac.compare_digest(attempt.encode("utf-8"), password.encode("utf-8")):
+            st.session_state.authenticated = True
+            st.session_state.login_failures = 0
+            st.rerun()
+        time.sleep(1.5)  # slow down guessing
+        failures += 1
+        st.session_state.login_failures = failures
+        if failures >= 5:
+            st.session_state.locked_until = time.time() + 60
+            st.session_state.login_failures = 0
+        st.error("Wrong password.")
+    st.stop()
+
+
+_require_password()
 
 
 # --- Helpers -----------------------------------------------------------------
@@ -161,6 +206,11 @@ with st.sidebar:
     if st.session_state.history and st.button("Clear history", width="stretch"):
         st.session_state.history, st.session_state.current = [], None
         st.rerun()
+    if config.APP_PASSWORD and st.session_state.get("authenticated"):
+        st.divider()
+        if st.button("Log out", width="stretch"):
+            st.session_state.clear()
+            st.rerun()
 
 
 # --- Search form -------------------------------------------------------------
@@ -195,6 +245,12 @@ with st.expander("Advanced Options (override the request manually)"):
         threshold = f4.slider("Rating below", 1.0, 5.0, 4.0, 0.1)
         manual_filters.append(("low_rating", threshold))
 
+    use_google_maps = st.checkbox(
+        "Include Google Maps (slower; often blocked on cloud servers)",
+        value=config.GOOGLE_MAPS_ENABLED,
+        help="Google Maps adds phone numbers, ratings and websites that OpenStreetMap often "
+             "lacks, but Google may show a CAPTCHA to automated browsing, especially from "
+             "cloud servers. When that happens the search continues with OpenStreetMap only.")
     max_results = st.slider("Max results per source", 10, 200, 50, 10)
     st.caption(
         f"OpenStreetMap returns up to {max_results} businesses per category. Google Maps is "
@@ -242,7 +298,8 @@ if find:
 
         try:
             result = run_pipeline(request, osm_max=max_results,
-                                  maps_max=min(max_results, maps_cap), on_progress=on_progress)
+                                  maps_max=min(max_results, maps_cap),
+                                  use_google_maps=use_google_maps, on_progress=on_progress)
         except Exception as exc:  # noqa: BLE001 - never show a raw crash to the user
             import logging
             logging.getLogger("leadscout.app").exception("Pipeline crashed")
@@ -327,5 +384,11 @@ if entry:
 # --- Footer ------------------------------------------------------------------
 
 st.divider()
+if HOSTED:
+    st.caption("Online demo: files are not kept on the server - use **Download Excel File** to "
+               "save your results. Searches run on a cloud server, where Google Maps is often "
+               "blocked; for complete results run LeadScout on your own computer.")
+st.caption("Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) "
+           "(ODbL).")
 st.caption("LeadScout AI uses only free and legal data sources (OpenStreetMap + limited Google "
            "Maps browsing). No paid API keys required.")

@@ -1,3 +1,14 @@
+---
+title: LeadScout AI
+emoji: 🔎
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Find local businesses that need a website or social media
+---
+
 # LeadScout AI
 
 A free, local lead-generation tool. LeadScout AI collects business leads
@@ -75,7 +86,8 @@ leadscout/
 ├── requirements.txt     # Pinned runtime dependencies
 ├── requirements-dev.txt # + PyInstaller (for building the .exe)
 ├── build.bat            # Builds the portable Windows command-line app
-├── Dockerfile           # Optional Docker deployment
+├── Dockerfile           # Web app container (Hugging Face Spaces / Docker)
+├── .github/workflows/   # Auto-deploy to Hugging Face on push
 └── README.md
 ```
 
@@ -135,15 +147,53 @@ time. Choose "More info" → "Run anyway", or code-sign the exe for production.
 | `LEADSCOUT_HEADLESS` | `1` | `0` shows the browser window |
 | `LEADSCOUT_LOG_DIR` | `logs` next to the app | Where daily log files are written |
 | `LEADSCOUT_PHONE_COUNTRY_CODE` | `92` (Pakistan) | Country code for local phone numbers |
+| `LEADSCOUT_PASSWORD` | (unset = no login) | Password for the web app. Set it only as a secret, never in code |
+| `LEADSCOUT_GOOGLE_MAPS` | `1` | `0` skips Google Maps (OpenStreetMap only) |
+| `LEADSCOUT_CONTACT` | this GitHub repo | Contact URL/email sent to OpenStreetMap, as its usage policy requires |
 
-## Deployment with Docker (optional)
+## Online demo on Hugging Face Spaces (free)
 
-For machines that already have Docker. The image is based on the official
-Playwright image, which includes Chromium.
+The repository is ready to run as a Hugging Face **Docker Space**: the header
+at the top of this README configures it, and the `Dockerfile` starts the web app
+with Playwright's Chromium included. A GitHub Action copies the code to the
+Space on every push to `main`.
+
+One-time setup:
+
+1. **Create the Space.** Sign up at https://huggingface.co, then
+   *New Space* → name it (e.g. `leadscout-ai`) → SDK **Docker** → template
+   **Blank** → hardware **CPU basic (free)** → *Create Space*.
+2. **Set the password.** In the Space: *Settings* → *Variables and secrets* →
+   *New secret*: name `LEADSCOUT_PASSWORD`, value = the password visitors must
+   enter. (Optional: a *variable* `LEADSCOUT_GOOGLE_MAPS` = `0` to skip Google Maps.)
+3. **Create an access token.** Hugging Face → *Settings* → *Access Tokens* →
+   *Create new token* → type **Write** → copy it.
+4. **Connect GitHub.** In this GitHub repository: *Settings* → *Secrets and
+   variables* → *Actions*:
+   - *Secrets* tab → *New repository secret*: `HF_TOKEN` = the token from step 3.
+   - *Variables* tab → *New repository variable*: `HF_SPACE` = `<hf-username>/<space-name>`.
+5. **Deploy.** *Actions* tab → *Deploy to Hugging Face Space* → *Run workflow*
+   (later pushes to `main` deploy automatically). The first build takes about
+   5-10 minutes; then the app is live at
+   `https://huggingface.co/spaces/<hf-username>/<space-name>`.
+
+Things to know about the hosted copy:
+
+- **Google Maps is often blocked** from cloud servers (CAPTCHA). The app then
+  shows a warning and continues with OpenStreetMap + website enrichment. Run
+  locally for complete results.
+- **Files are temporary** - use *Download Excel File*; the server's `output/`
+  is wiped on restart.
+- **Free Spaces sleep** after a period without visitors; the first visit
+  afterwards takes a minute or two to wake up.
+- Anyone with the link sees the login page; only people with the password can
+  run searches. Share the password privately.
+
+## Docker (optional, local)
 
 ```bash
-docker compose run --rm leadscout --check
-docker compose run --rm leadscout
+docker compose up web                      # web app at http://localhost:8501
+docker compose run --rm cli --check        # command-line version
 ```
 
 Excel files appear in `./output` on the host.

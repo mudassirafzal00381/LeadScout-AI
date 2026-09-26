@@ -1,0 +1,45 @@
+# Copies this repository to a Hugging Face Space on every push to main,
+# so the online demo always runs the latest code.
+#
+# One-time setup in GitHub (Settings -> Secrets and variables -> Actions):
+#   Secret   HF_TOKEN  = a Hugging Face access token with "Write" permission
+#   Variable HF_SPACE  = <hf-username>/<space-name>, e.g. mudassir381/leadscout-ai
+# The app password is NOT set here - add it in the Space's own settings
+# (Settings -> Variables and secrets -> New secret: LEADSCOUT_PASSWORD).
+name: Deploy to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check configuration
+        id: config
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_SPACE" ]; then
+            echo "HF_TOKEN secret or HF_SPACE variable not set - skipping deployment."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.ready == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Push to Hugging Face
+        if: steps.config.outputs.ready == 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          HF_USER="${HF_SPACE%%/*}"
+          git push --force "https://${HF_USER}:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE}" HEAD:main

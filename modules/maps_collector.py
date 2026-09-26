@@ -56,6 +56,10 @@ _RATING_TEXT_RE = re.compile(r"(\d(?:\.\d)?)\s*\(([\d,]+)\)")
 # review_count is then None.
 
 
+class GoogleMapsBlocked(RuntimeError):
+    """Google showed a CAPTCHA / "unusual traffic" page before any results were collected."""
+
+
 def _pause(scale: float = 1.0) -> None:
     """Sleep a random, human-like amount of time to reduce detection risk."""
     low, high = config.MAPS_DELAY_RANGE
@@ -208,6 +212,7 @@ def collect_from_google_maps(category: str, location: str, max_results: int = 50
     search_term = category.replace("_", " ")  # "retail_store" -> "retail store"
     query = urllib.parse.quote_plus(f"{search_term} in {location}")
     leads: list[dict] = []
+    blocked = False
 
     with sync_playwright() as p:
         browser, channel = launch_browser(p)
@@ -219,7 +224,7 @@ def collect_from_google_maps(category: str, location: str, max_results: int = 50
                       timeout=config.MAPS_PAGE_TIMEOUT * 1000)
             _handle_consent(page)
             if _is_blocked(page):
-                log.error("Google is showing a CAPTCHA / unusual-traffic page. Try again later.")
+                blocked = True
                 return leads
 
             try:
@@ -244,11 +249,17 @@ def collect_from_google_maps(category: str, location: str, max_results: int = 50
                     log.warning("  [%d/%d] failed (%s): %s", i, len(cards), card.get("name"),
                                 str(exc).splitlines()[0])
                     if _is_blocked(page):
+                        blocked = True
                         log.error("Google started blocking requests; stopping early.")
                         break
         except Exception as exc:  # noqa: BLE001 - return partial results instead of crashing
             log.error("Google Maps collection stopped: %s", str(exc).splitlines()[0])
         finally:
             browser.close()
+            if blocked and not leads:
+                # Raised after cleanup so the caller can show a clear message.
+                raise GoogleMapsBlocked(
+                    "Google showed a CAPTCHA / unusual-traffic page. This is common on cloud "
+                    "servers; try again later, or run LeadScout on your own computer.")
 
     return leads

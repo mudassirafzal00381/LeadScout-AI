@@ -1,9 +1,23 @@
-# Usage:
-#   docker compose run --rm leadscout --check
-#   docker compose run --rm leadscout
-# Excel files appear in ./output on the host.
+# Optional local Docker usage.
+#
+#   Web app:       docker compose up web          -> http://localhost:8501
+#   Command line:  docker compose run --rm cli --check
+#                  docker compose run --rm cli --request "salons in Karachi"
+#
+# Excel files appear in ./output on the host. To require a password, set
+# LEADSCOUT_PASSWORD in your shell before starting (never commit it).
 services:
-  leadscout:
+  web:
     build: .
+    ports:
+      - "8501:7860"
+    environment:
+      - LEADSCOUT_PASSWORD
     volumes:
-      - ./output:/app/output
+      - ./output:/tmp/leadscout/output
+
+  cli:
+    build: .
+    entrypoint: ["python", "main.py"]
+    volumes:
+      - ./output:/tmp/leadscout/output

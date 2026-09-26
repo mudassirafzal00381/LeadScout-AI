@@ -59,10 +59,23 @@ ENRICHMENT_USER_AGENT = (
 )
 ENRICHMENT_MAX_PAGE_BYTES = 3_000_000  # stop reading very large homepages
 
+# OpenStreetMap's Nominatim/Overpass usage policy requires a User-Agent that
+# identifies the application and how to reach its operator.
+# env: LEADSCOUT_CONTACT  (a URL or email address)
+CONTACT = os.environ.get("LEADSCOUT_CONTACT", "https://github.com/mudassirafzal00381/LeadScout-AI")
 USER_AGENTS = [
-    "LeadScoutAI/0.1 (+https://github.com/your-username/leadscout)",
+    f"LeadScoutAI/1.0 (+{CONTACT})",
     # Add additional user-agent strings here.
 ]
+
+# Google Maps collection can be switched off, e.g. on cloud servers where Google
+# tends to block automated browsing. env: LEADSCOUT_GOOGLE_MAPS ("1"/"0")
+GOOGLE_MAPS_ENABLED = os.environ.get("LEADSCOUT_GOOGLE_MAPS", "1") != "0"
+
+# Web app password. Leave unset for local use (no login). On a hosted copy, set
+# it as a secret environment variable - never commit it to the repository.
+# env: LEADSCOUT_PASSWORD
+APP_PASSWORD = os.environ.get("LEADSCOUT_PASSWORD", "")
 
 # --- Browser (Playwright) ---
 # Browsers are tried in order; the first one installed on the machine is used.

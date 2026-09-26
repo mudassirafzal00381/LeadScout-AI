@@ -73,12 +73,14 @@ def _save_json(leads: list[dict], path: Path) -> Path:
 
 
 def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | None = None,
+                 use_google_maps: bool | None = None,
                  on_progress: ProgressCallback | None = None) -> PipelineResult:
     """Run collect -> merge -> enrich -> filter/score -> export for a parsed request.
 
     parsed: {"category", "categories", "location", "filters"} (see modules.nlp_parser).
     osm_max / maps_max: results per category and source; defaults depend on
     whether one or several categories are searched (see config).
+    use_google_maps: False skips Google Maps (default: config.GOOGLE_MAPS_ENABLED).
     Ctrl+C (KeyboardInterrupt) during collection or enrichment stops that stage
     early and the pipeline continues with what was found.
     """
@@ -90,6 +92,8 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
     many = len(categories) > 1
     osm_max = osm_max or (config.ALL_CATEGORIES_OSM_MAX if many else 100)
     maps_max = maps_max or (config.ALL_CATEGORIES_MAPS_MAX if many else 20)
+    if use_google_maps is None:
+        use_google_maps = config.GOOGLE_MAPS_ENABLED
     log.info("Pipeline start: %s (osm_max=%s, maps_max=%s)", parsed, osm_max, maps_max)
 
     def step(name: str, func, *args, fallback=None, **kwargs):
@@ -122,10 +126,13 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
                            category, location, osm_max, fallback=[])
                 progress("detail", f"{len(osm)} found on OpenStreetMap", None)
 
-                progress("maps", f"{prefix}Collecting from Google Maps...", base + share * 0.15)
-                maps = step(f"Google Maps ({label})", collect_from_google_maps,
-                            category, location, maps_max, fallback=[])
-                progress("detail", f"{len(maps)} found on Google Maps", None)
+                if use_google_maps:
+                    progress("maps", f"{prefix}Collecting from Google Maps...", base + share * 0.15)
+                    maps = step(f"Google Maps ({label})", collect_from_google_maps,
+                                category, location, maps_max, fallback=[])
+                    progress("detail", f"{len(maps)} found on Google Maps", None)
+                else:
+                    maps = []
                 result.osm_count += len(osm)
                 result.maps_count += len(maps)
 

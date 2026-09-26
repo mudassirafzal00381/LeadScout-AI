@@ -6,3 +6,6 @@ __pycache__/
 *.pyc
 *.spec
 logs/
+.git/
+.github/
+.streamlit/secrets.toml
