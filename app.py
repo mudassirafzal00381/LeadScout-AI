@@ -8,6 +8,7 @@ normally unset, so no login is needed.
 """
 
 import hmac
+import ipaddress
 import os
 import time
 from datetime import datetime
@@ -51,16 +52,56 @@ def _logging_ready() -> Path | None:
 LOG_PATH = _logging_ready()
 st.session_state.setdefault("history", [])
 st.session_state.setdefault("current", None)
-# Hugging Face Spaces sets SPACE_ID; used to show hosting-specific notes.
-HOSTED = bool(os.environ.get("SPACE_ID"))
+
+
+def _setting(name: str, default: str = "") -> str:
+    """Read a setting from the environment, or from Streamlit secrets
+    (.streamlit/secrets.toml locally; the "Secrets" box on Streamlit Community Cloud)."""
+    value = os.environ.get(name)
+    if value:
+        return value
+    try:
+        return str(st.secrets.get(name, default))
+    except Exception:  # noqa: BLE001 - no secrets file: that's fine
+        return default
+
+
+APP_PASSWORD = _setting("LEADSCOUT_PASSWORD")
+GOOGLE_MAPS_DEFAULT = _setting("LEADSCOUT_GOOGLE_MAPS", "1" if config.GOOGLE_MAPS_ENABLED else "0") != "0"
+# Hosted copies (Hugging Face sets SPACE_ID; Streamlit Cloud serves from /mount/src)
+# show a note that files are temporary and Google Maps is often blocked.
+HOSTED = bool(os.environ.get("SPACE_ID")) or str(Path(__file__).resolve()).startswith("/mount/src")
 
 
 # --- Password gate -----------------------------------------------------------
 
+def _is_local_visitor() -> bool:
+    """True when the page is opened on the computer running the app."""
+    ip = st.context.ip_address  # None when opened via localhost
+    if ip is None:
+        return True
+    try:
+        return ipaddress.ip_address(str(ip)).is_loopback
+    except ValueError:
+        return False
+
+
 def _require_password() -> None:
-    """Show a login form and stop the page until the right password is entered."""
-    password = config.APP_PASSWORD
-    if not password or st.session_state.get("authenticated"):
+    """Show a login form and stop the page until the right password is entered.
+
+    Without a password the app is meant for this computer only, so visitors
+    from other devices are turned away.
+    """
+    password = APP_PASSWORD
+    if not password:
+        if not _is_local_visitor():
+            st.title("LeadScout AI")
+            st.error("This copy of LeadScout AI has no password set, so it only works on the "
+                     "computer it runs on. To allow access from other devices, set the "
+                     "LEADSCOUT_PASSWORD secret.")
+            st.stop()
+        return
+    if st.session_state.get("authenticated"):
         return
 
     st.title("LeadScout AI")
@@ -192,7 +233,8 @@ with st.sidebar:
         "5. **Filter & score** - businesses with more gaps (no website, no social "
         "media...) score higher: more services to sell.\n"
         "6. **Download** everything as an Excel file.\n\n"
-        "Everything runs on your computer. No paid services or API keys."
+        + ("No paid services or API keys." if HOSTED
+           else "Everything runs on your computer. No paid services or API keys.")
     )
     st.divider()
     st.header("Search history")
@@ -206,7 +248,7 @@ with st.sidebar:
     if st.session_state.history and st.button("Clear history", width="stretch"):
         st.session_state.history, st.session_state.current = [], None
         st.rerun()
-    if config.APP_PASSWORD and st.session_state.get("authenticated"):
+    if APP_PASSWORD and st.session_state.get("authenticated"):
         st.divider()
         if st.button("Log out", width="stretch"):
             st.session_state.clear()
@@ -247,7 +289,7 @@ with st.expander("Advanced Options (override the request manually)"):
 
     use_google_maps = st.checkbox(
         "Include Google Maps (slower; often blocked on cloud servers)",
-        value=config.GOOGLE_MAPS_ENABLED,
+        value=GOOGLE_MAPS_DEFAULT,
         help="Google Maps adds phone numbers, ratings and websites that OpenStreetMap often "
              "lacks, but Google may show a CAPTCHA to automated browsing, especially from "
              "cloud servers. When that happens the search continues with OpenStreetMap only.")

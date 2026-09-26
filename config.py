@@ -6,6 +6,7 @@ so deployments can be adjusted without editing code.
 
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 # --- Paths ---
@@ -20,6 +21,24 @@ else:
 OUTPUT_DIR = Path(os.environ.get("LEADSCOUT_OUTPUT_DIR", BASE_DIR / "output"))
 # One log file per day (errors with full details). env: LEADSCOUT_LOG_DIR
 LOG_DIR = Path(os.environ.get("LEADSCOUT_LOG_DIR", BASE_DIR / "logs"))
+
+
+def _writable(folder: Path) -> bool:
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        probe = folder / ".write_test"
+        probe.write_text("ok")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
+
+
+# Some hosting platforms make the app folder read-only; fall back to the temp folder.
+if not _writable(OUTPUT_DIR):
+    OUTPUT_DIR = Path(tempfile.gettempdir()) / "leadscout" / "output"
+if not _writable(LOG_DIR):
+    LOG_DIR = Path(tempfile.gettempdir()) / "leadscout" / "logs"
 
 # --- Rate limits (seconds between requests) ---
 OSM_REQUEST_DELAY = 1.0

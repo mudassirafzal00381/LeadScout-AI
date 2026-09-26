@@ -44,10 +44,10 @@ connection, and Google Chrome or Microsoft Edge (Edge comes with Windows).
    and set `LEADSCOUT_BROWSER_CHANNELS=bundled`. Run `python main.py --check` to
    confirm which browser will be used.
 
-3. **Run the app:**
+3. **Run the app:** double-click `run_app.bat`, or run:
 
    ```bash
-   streamlit run app.py
+   streamlit run app.py --server.address localhost
    ```
 
    Your browser opens at http://localhost:8501. Type a request such as
@@ -57,8 +57,9 @@ connection, and Google Chrome or Microsoft Edge (Edge comes with Windows).
    **Download Excel File** button. Previous searches stay in the sidebar until
    you close the tab.
 
-The app is only reachable from this computer (`.streamlit/config.toml` binds it
-to `localhost`). Excel files are also saved in `output/`, and error details in
+`--server.address localhost` (used by `run_app.bat`) keeps the app reachable
+only from this computer. In addition, without a password the app refuses
+visitors from other devices. Excel files are also saved in `output/`, and error details in
 `logs/`.
 
 ## Project structure
@@ -151,9 +152,35 @@ time. Choose "More info" → "Run anyway", or code-sign the exe for production.
 | `LEADSCOUT_GOOGLE_MAPS` | `1` | `0` skips Google Maps (OpenStreetMap only) |
 | `LEADSCOUT_CONTACT` | this GitHub repo | Contact URL/email sent to OpenStreetMap, as its usage policy requires |
 
-## Online demo on Hugging Face Spaces (free)
+## Online demo on Streamlit Community Cloud (free, recommended)
 
-The repository is ready to run as a Hugging Face **Docker Space**: the header
+Streamlit Community Cloud runs the app straight from this GitHub repository.
+It has no Chrome/Chromium, so the hosted copy uses **OpenStreetMap + website
+enrichment only** (Google Maps switched off).
+
+1. Go to https://share.streamlit.io and sign in with GitHub.
+2. *Create app* → *Deploy a public app from GitHub* (or *from a private repo*):
+   - Repository: this repo · Branch: `main` · Main file path: `app.py`
+   - App URL: pick a name, e.g. `leadscout-ai`
+3. *Advanced settings*:
+   - Python version: **3.12**
+   - Secrets - paste (with your own password between the quotes):
+
+     ```toml
+     LEADSCOUT_PASSWORD = "your-password-here"
+     LEADSCOUT_GOOGLE_MAPS = "0"
+     ```
+4. *Deploy*. The first start takes a few minutes. Later pushes to `main`
+   update the app automatically.
+
+Visitors see a login page; only people with the password can run searches.
+Files are temporary on the server - use *Download Excel File*. Apps sleep after
+a period without visitors and take a moment to wake up.
+
+## Online demo on Hugging Face Spaces (paid plan)
+
+Hugging Face now requires a paid (PRO) plan for Docker Spaces. With PRO, this
+repository also runs as a Hugging Face **Docker Space**: the header
 at the top of this README configures it, and the `Dockerfile` starts the web app
 with Playwright's Chromium included. A GitHub Action copies the code to the
 Space on every push to `main`.
