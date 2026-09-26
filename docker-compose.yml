@@ -1,0 +1,9 @@
+# Usage:
+#   docker compose run --rm leadscout --check
+#   docker compose run --rm leadscout
+# Excel files appear in ./output on the host.
+services:
+  leadscout:
+    build: .
+    volumes:
+      - ./output:/app/output

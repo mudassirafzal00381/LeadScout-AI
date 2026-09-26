@@ -1,0 +1,13 @@
+# Web app settings. Works both locally and on Streamlit Community Cloud.
+# To keep a local run private to this PC, start it with:
+#   streamlit run app.py --server.address localhost
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#1F4E78"
+
+[client]
+# Hide developer menus such as "Deploy".
+toolbarMode = "viewer"
