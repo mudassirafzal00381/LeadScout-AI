@@ -175,6 +175,56 @@ def _find_filters(text: str) -> list:
     return filters
 
 
+# --- Filter text box ---------------------------------------------------------
+
+_RATING_WORDS = re.compile(r"\b(rat(ed|ing|ings)|reviews?|stars?)\b", re.IGNORECASE)
+_NUMBER = re.compile(r"\d(?:\.\d+)?")
+_HAS_PHONE = re.compile(r"\b(has|have|having|with|can call)\b.*\b(phone|number|contact)", re.IGNORECASE)
+_BROKEN_SITE = re.compile(r"\b(broken|down|not working|offline|dead)\b.*\bweb ?sites?\b|"
+                          r"\bweb ?sites?\b.*\b(broken|down|not working|offline|dead)\b", re.IGNORECASE)
+# In the filter box everything describes what the leads are MISSING, so a bare
+# word is enough: "website, social media" = no website and no social media.
+_MISSING = [
+    (re.compile(r"\bweb ?sites?\b|\bsite\b", re.IGNORECASE), "no_website"),
+    (re.compile(r"\bsocial\b|facebook|instagram|tiktok|linkedin|twitter|\bx\b|youtube|whatsapp",
+                re.IGNORECASE), "no_social_media"),
+    (re.compile(r"\bphones?\b|\bnumbers?\b|\bcontact\b|\bmobile\b", re.IGNORECASE), "no_phone"),
+    (re.compile(r"\be-?mails?\b", re.IGNORECASE), "no_email"),
+]
+
+
+def parse_filter_text(text: str) -> tuple[list, list[str]]:
+    """Read the Advanced Options filter box, e.g. "no website, no social media, rating below 4".
+
+    Items are separated by commas or "and". Returns (filters, unrecognised items).
+    """
+    filters: list = []
+    unknown: list[str] = []
+
+    def add(rule) -> None:
+        if rule not in filters:
+            filters.append(rule)
+
+    for part in re.split(r",|;|/|&|\+|\n|\band\b", text or "", flags=re.IGNORECASE):
+        item = part.strip(" .")
+        if not item:
+            continue
+        if _RATING_WORDS.search(item):
+            number = _NUMBER.search(item)
+            add(("low_rating", float(number.group())) if number else "low_rating")
+        elif _HAS_PHONE.search(item):
+            add("has_phone")
+        elif _BROKEN_SITE.search(item):
+            add("broken_website")
+        else:
+            matched = [rule for regex, rule in _MISSING if regex.search(item)]
+            for rule in matched:
+                add(rule)
+            if not matched:
+                unknown.append(item)
+    return filters, unknown
+
+
 # --- Public API --------------------------------------------------------------
 
 def parse_user_request(text: str) -> dict:

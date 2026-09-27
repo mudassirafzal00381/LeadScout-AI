@@ -20,7 +20,7 @@ import streamlit as st
 import config
 from main import setup_logging
 from modules.excel_export import COLUMN_HEADERS, table_rows
-from modules.nlp_parser import parse_user_request
+from modules.nlp_parser import parse_filter_text, parse_user_request
 from modules.pipeline import run_pipeline
 
 st.set_page_config(page_title="LeadScout AI", page_icon="🔎", layout="wide")
@@ -274,25 +274,19 @@ with st.expander("Advanced Options (override the request manually)"):
     category_choice = col1.selectbox("Category", CATEGORY_CHOICES)
     location_override = col2.text_input("Location", placeholder="From my request, e.g. Karachi")
 
-    st.markdown("**Filters** - if you tick any, they replace the filters in your request.")
-    f1, f2, f3, f4 = st.columns(4)
-    manual_filters = []
-    if f1.checkbox("Needs Website"):
-        manual_filters.append("no_website")
-    if f2.checkbox("Needs Social Media"):
-        manual_filters.append("no_social_media")
-    if f3.checkbox("Needs Phone Number"):
-        manual_filters.append("no_phone")
-    if f4.checkbox("Low Rating"):
-        threshold = f4.slider("Rating below", 1.0, 5.0, 4.0, 0.1)
-        manual_filters.append(("low_rating", threshold))
+    filter_text = st.text_input(
+        "What should the leads be missing?",
+        placeholder="e.g. no website, no social media, rating below 4",
+        help="Separate items with commas or 'and'. Understood: website, social media, phone "
+             "number, email, broken website, low rating / rating below 4, has a phone number. "
+             "Anything typed here replaces the filters in your request above.")
+    manual_filters, unknown_filters = parse_filter_text(filter_text)
+    if unknown_filters:
+        st.warning("Not understood, so ignored: " + ", ".join(f"\"{u}\"" for u in unknown_filters)
+                   + ". Try words like website, social media, phone number, email, rating below 4.")
+    elif manual_filters:
+        st.caption(f"**Filters:** {describe_filters(manual_filters)}")
 
-    use_google_maps = st.checkbox(
-        "Include Google Maps (slower; often blocked on cloud servers)",
-        value=GOOGLE_MAPS_DEFAULT,
-        help="Google Maps adds phone numbers, ratings and websites that OpenStreetMap often "
-             "lacks, but Google may show a CAPTCHA to automated browsing, especially from "
-             "cloud servers. When that happens the search continues with OpenStreetMap only.")
     max_results = st.slider("Max results per source", 10, 200, 50, 10)
     st.caption(
         f"OpenStreetMap returns up to {max_results} businesses per category. Google Maps is "
@@ -301,7 +295,7 @@ with st.expander("Advanced Options (override the request manually)"):
     )
 
 request = build_request(text, category_choice, location_override, manual_filters)
-if text.strip() or location_override.strip():
+if text.strip() or location_override.strip() or filter_text.strip():
     st.caption(
         f"**Understood as:** {describe_category(request)} · "
         f"{request['location'] or '⚠️ no location yet'} · {describe_filters(request['filters'])}"
@@ -341,7 +335,7 @@ if find:
         try:
             result = run_pipeline(request, osm_max=max_results,
                                   maps_max=min(max_results, maps_cap),
-                                  use_google_maps=use_google_maps, on_progress=on_progress)
+                                  use_google_maps=GOOGLE_MAPS_DEFAULT, on_progress=on_progress)
         except Exception as exc:  # noqa: BLE001 - never show a raw crash to the user
             import logging
             logging.getLogger("leadscout.app").exception("Pipeline crashed")
