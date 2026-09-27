@@ -121,7 +121,27 @@ enrich (social media, email) → filter and score → save to Excel in `output/`
 Developer tests for each stage: `--test-osm`, `--test-maps`, `--test-merge`,
 `--test-enrich`, `--test-filter`, `--test-export`, `--test-parser` (see `dev_tests.py`).
 
-## Deployment to a client PC (Windows)
+## Deliver to a client (recommended)
+
+Build the package:
+
+```bash
+.venv\Scripts\python.exe tools\make_client_package.py
+```
+
+This creates `dist\LeadScout-AI.zip` (~450 KB): the app, `Install LeadScout AI.bat`,
+`Start LeadScout AI.bat` and a branded `Installation Guide.html`. Send the zip to the
+client. On their PC they:
+
+1. Unzip it to `C:\` (giving `C:\LeadScout AI`; the path must stay short).
+2. Double-click `Install LeadScout AI.bat` once (installs Python 3.11 via winget if
+   needed, the libraries, and a desktop shortcut with the logo; 5-10 minutes).
+3. Use the **LeadScout AI** desktop icon from then on.
+
+Rebuild the zip after every change you want the client to get; they re-extract it
+over their folder and run the installer again (it reuses what is already there).
+
+## Deployment to a client PC (Windows, .exe - legacy)
 
 > The `.exe` built below contains the **command-line** version only; the web
 > interface (`app.py`) needs Python on the client PC (see Getting Started).

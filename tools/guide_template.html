@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LeadScout AI - Installation Guide</title>
+<style>
+  :root { --navy:#00163F; --blue:#0263E6; --sky:#0D91FD; --ink:#0F1B3D; --muted:#5B6B8C; --line:#E3EAF6; --soft:#F4F8FF; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Segoe UI", system-ui, sans-serif; color:var(--ink); background:#F7FAFF; line-height:1.6; }
+  .hero { background:linear-gradient(125deg,var(--navy),#062D7A 45%,var(--blue)); color:#fff; padding:40px 24px; text-align:center; }
+  .hero img { width:120px; background:#fff; border-radius:26px; padding:10px; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+  .hero h1 { margin:14px 0 4px; font-size:2rem; }
+  .hero p { margin:0; color:#CFE6FF; }
+  main { max-width:860px; margin:0 auto; padding:26px 18px 60px; }
+  h2 { margin:34px 0 10px; font-size:1.35rem; display:flex; align-items:center; gap:10px; }
+  h2 .n { display:inline-grid; place-items:center; width:32px; height:32px; border-radius:10px; color:#fff; font-size:.95rem;
+          background:linear-gradient(135deg,var(--blue),var(--sky)); }
+  .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px 22px; box-shadow:0 8px 24px rgba(2,38,110,.06); margin:12px 0; }
+  ol, ul { padding-left:22px; } li { margin:6px 0; }
+  code, kbd { background:var(--soft); border:1px solid var(--line); border-radius:6px; padding:1px 6px; font-family:Consolas, monospace; font-size:.92em; }
+  .tip { background:#EAF4FF; border-left:4px solid var(--sky); padding:12px 16px; border-radius:10px; margin:12px 0; }
+  .warn { background:#FFF4E5; border-left:4px solid #FF9F43; padding:12px 16px; border-radius:10px; margin:12px 0; }
+  table { width:100%; border-collapse:collapse; margin:10px 0; } td, th { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  th { background:var(--soft); }
+  .flow { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .flow span { background:#fff; border:1.5px solid var(--line); border-radius:999px; padding:6px 14px; font-weight:600; }
+  .flow b { color:var(--sky); }
+  .red { background:#FFC7CE; } .orange { background:#FCE4D6; }
+  footer { text-align:center; color:var(--muted); font-size:.85rem; margin-top:40px; }
+</style>
+</head>
+<body>
+<div class="hero">
+  <img src="{{LOGO}}" alt="LeadScout AI">
+  <h1>LeadScout AI - Installation Guide</h1>
+  <p>Find local businesses that need your services - free, on your own computer.</p>
+</div>
+<main>
+
+<h2><span class="n">✓</span>What you need</h2>
+<div class="card"><ul>
+  <li>A Windows 10 or 11 PC (64-bit) with an <b>internet connection</b>.</li>
+  <li><b>Google Chrome</b> or <b>Microsoft Edge</b> (Edge comes with Windows, so this is almost always already there).</li>
+  <li>About <b>1 GB</b> of free disk space and 10 minutes for the one-time setup.</li>
+</ul></div>
+
+<h2><span class="n">1</span>Unzip the file</h2>
+<div class="card"><ol>
+  <li>Right-click <code>LeadScout-AI.zip</code> → <b>Properties</b>. If you see an <b>Unblock</b> checkbox at the bottom, tick it and click <b>OK</b>. (This prevents Windows warnings in the next steps.)</li>
+  <li>Right-click the zip → <b>Extract All…</b> → in the box, type <code>C:\</code> → <b>Extract</b>. This creates the folder <code>C:\LeadScout AI</code>.</li>
+</ol>
+<div class="warn">Use a short location like <code>C:\LeadScout AI</code>: Windows can't handle the installation inside very long folder paths. Don't run it from inside the zip, and don't use <code>C:\Program Files</code>.</div></div>
+
+<h2><span class="n">2</span>Install (one time only)</h2>
+<div class="card"><ol>
+  <li>Open the extracted <code>LeadScout AI</code> folder and double-click <b><code>Install LeadScout AI.bat</code></b>.</li>
+  <li>If Windows shows <i>"Windows protected your PC"</i>, click <b>More info</b> → <b>Run anyway</b>.</li>
+  <li>A black window opens and installs everything. <b>Wait 5-10 minutes</b> until it says <b>Setup complete!</b> If Python isn't on the PC yet, the installer adds the official Python 3.11 automatically.</li>
+  <li>At the end it checks the PC. All lines should say <code>[OK]</code>.</li>
+  <li>Press <kbd>Y</kbd> to start LeadScout AI straight away.</li>
+</ol>
+<div class="tip">A <b>LeadScout AI</b> icon with the logo is added to your desktop. That's all you need from now on.</div></div>
+
+<h2><span class="n">3</span>Start LeadScout AI (every time)</h2>
+<div class="card"><ol>
+  <li>Double-click the <b>LeadScout AI</b> icon on your desktop.</li>
+  <li>A small black window opens and your browser opens LeadScout AI automatically at <code>http://localhost:8501</code>.</li>
+  <li><b>Keep the black window open</b> while you work. When you're done, close the browser tab and then the black window.</li>
+</ol>
+<div class="tip">LeadScout AI runs entirely on your computer. Nobody else can open it, and your results stay on your PC.</div></div>
+
+<h2><span class="n">4</span>Find leads - the workflow</h2>
+<div class="card">
+  <div class="flow"><span>✍️ Describe</span><b>→</b><span>🚀 Find Leads</span><b>→</b><span>📡 Wait 2-4 min</span><b>→</b><span>📊 Review</span><b>→</b><span>⬇️ Download Excel</span><b>→</b><span>📞 Contact</span></div>
+  <ol>
+    <li><b>Type what you want</b> in plain English in the search box, for example:<br>
+      <code>restaurants in Lahore that need a website</code><br>
+      <code>salons in Karachi without social media</code><br>
+      <code>gyms in Islamabad that need a website and have a phone number</code><br>
+      Or click one of the example buttons under the box.</li>
+    <li>Check the <b>Understood as</b> line (business type · city · what they're missing). Reword your request if it's wrong.</li>
+    <li>Click <b>🚀 Find Leads</b>. A radar animation and a live progress panel show what's happening. One business type takes about <b>2-4 minutes</b>.</li>
+    <li>Review the results: summary numbers, <b>Top opportunities</b> (the best leads you can call), and the full table. Click any column title to sort.</li>
+    <li>Click <b>⬇️ Download Excel File</b>. A copy is also saved in the <code>output</code> folder inside the LeadScout AI folder.</li>
+    <li>Contact the businesses and offer your services!</li>
+  </ol>
+</div>
+
+<h2><span class="n">5</span>Tips for better results</h2>
+<div class="card"><ul>
+  <li><b>Add "and have a phone number"</b> to your request to get only businesses you can call.</li>
+  <li><b>Search one city at a time</b> ("salons in Karachi"), not a whole country.</li>
+  <li><b>Advanced Options</b> lets you pick a category or location from a list, type what the leads should be missing (e.g. <code>no website, no social media</code>), and set how many results to collect.</li>
+  <li>Leaving out the business type ("businesses in Lahore that need a website") searches 12 common types - this takes 10-15 minutes.</li>
+  <li>Avoid running very large searches many times in a row - Google may slow you down for a while.</li>
+</ul></div>
+
+<h2><span class="n">6</span>Understanding the results</h2>
+<div class="card"><table>
+  <tr><th>Item</th><th>Meaning</th></tr>
+  <tr><td class="red">Red cell</td><td>Key gap: no phone number, or no real website.</td></tr>
+  <tr><td class="orange">Orange cell</td><td>Other missing info: email, Facebook, Instagram, LinkedIn, address - or a website that doesn't load.</td></tr>
+  <tr><td>Lead Score (0-100)</td><td>Higher = more missing = more services you can offer. No website +40, no social media +30, no phone +30.</td></tr>
+  <tr><td>Top opportunities</td><td>The best leads, with businesses you can phone shown first.</td></tr>
+</table></div>
+
+<h2><span class="n">?</span>Troubleshooting</h2>
+<div class="card"><table>
+  <tr><th>Problem</th><th>What to do</th></tr>
+  <tr><td>"Windows protected your PC"</td><td>Click <b>More info</b> → <b>Run anyway</b>. Next time, unblock the zip first (step 1).</td></tr>
+  <tr><td>Setup says Python couldn't be installed</td><td>Install Python 3.11 from python.org (tick "Add python.exe to PATH"), then run <code>Install LeadScout AI.bat</code> again.</td></tr>
+  <tr><td>Setup stopped with an error</td><td>Check the internet connection and run <code>Install LeadScout AI.bat</code> again - it continues where it stopped.</td></tr>
+  <tr><td>"This folder's location is too long for Windows"</td><td>Move the whole <code>LeadScout AI</code> folder to <code>C:\LeadScout AI</code> and run the installer again from there.</td></tr>
+  <tr><td>Browser didn't open</td><td>Open <code>http://localhost:8501</code> yourself while the black window is open.</td></tr>
+  <tr><td>Google Maps found 0 businesses</td><td>Google may be limiting searches. Wait an hour, or use smaller searches. OpenStreetMap results still work.</td></tr>
+  <tr><td>Anything else</td><td>Error details are saved in the <code>logs</code> folder. Send the latest log file to your LeadScout AI provider.</td></tr>
+</table></div>
+
+<footer>LeadScout AI · Lead Generation Tool · Map data © OpenStreetMap contributors (ODbL)</footer>
+</main>
+</body>
+</html>
