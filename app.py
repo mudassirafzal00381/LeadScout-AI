@@ -1,29 +1,40 @@
 """LeadScout AI - web interface.
 
-Run with:  streamlit run app.py
+Run with:  streamlit run app.py   (or double-click run_app.bat)
 
 If the LEADSCOUT_PASSWORD environment variable is set (e.g. as a secret on a
 hosted copy), visitors must enter it before using the app. Locally it is
 normally unset, so no login is needed.
+
+Styling and HTML components live in modules/ui.py.
 """
 
 import hmac
 import ipaddress
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 import config
 from main import setup_logging
+from modules import ui
 from modules.excel_export import COLUMN_HEADERS, table_rows
 from modules.nlp_parser import parse_filter_text, parse_user_request
 from modules.pipeline import run_pipeline
 
-st.set_page_config(page_title="LeadScout AI", page_icon="🔎", layout="wide")
+try:
+    _PAGE_ICON = Image.open(ui.ASSETS / "icon.png")
+except OSError:
+    _PAGE_ICON = "🔎"
+st.set_page_config(page_title="LeadScout AI", page_icon=_PAGE_ICON, layout="wide",
+                   initial_sidebar_state="expanded")
+st.markdown(ui.CSS, unsafe_allow_html=True)
 
 FILTER_LABELS = {
     "no_website": "Needs website",
@@ -36,6 +47,12 @@ FILTER_LABELS = {
 }
 CATEGORY_CHOICES = ["From my request", "All Categories"] + [
     c.replace("_", " ").title() for c in config.DEFAULT_CATEGORIES
+]
+EXAMPLES = [
+    "restaurants in Lahore that need a website",
+    "salons in Karachi without social media",
+    "gyms in Islamabad that need a website and have a phone number",
+    "cafes in Islamabad without social media",
 ]
 LINK_COLUMNS = ["Website", "Facebook", "Instagram", "LinkedIn", "Listing Link"]
 RED_WHEN_EMPTY = ["Contact Number", "Website"]
@@ -95,7 +112,8 @@ def _require_password() -> None:
     password = APP_PASSWORD
     if not password:
         if not _is_local_visitor():
-            st.title("LeadScout AI")
+            st.markdown(ui.login_header("This copy of LeadScout AI is private."),
+                        unsafe_allow_html=True)
             st.error("This copy of LeadScout AI has no password set, so it only works on the "
                      "computer it runs on. To allow access from other devices, set the "
                      "LEADSCOUT_PASSWORD secret.")
@@ -104,29 +122,31 @@ def _require_password() -> None:
     if st.session_state.get("authenticated"):
         return
 
-    st.title("LeadScout AI")
-    st.caption("This copy of LeadScout AI is private. Please enter the password.")
-    failures = st.session_state.get("login_failures", 0)
-    locked_until = st.session_state.get("locked_until", 0.0)
-    if time.time() < locked_until:
-        st.error(f"Too many wrong attempts. Try again in {int(locked_until - time.time())} seconds.")
-        st.stop()
+    st.markdown(ui.login_header("This copy of LeadScout AI is private. Please enter the password."),
+                unsafe_allow_html=True)
+    _, middle, _ = st.columns([1, 1.1, 1])
+    with middle:
+        failures = st.session_state.get("login_failures", 0)
+        locked_until = st.session_state.get("locked_until", 0.0)
+        if time.time() < locked_until:
+            st.error(f"Too many wrong attempts. Try again in {int(locked_until - time.time())} seconds.")
+            st.stop()
 
-    with st.form("login"):
-        attempt = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Log in", type="primary")
-    if submitted:
-        if hmac.compare_digest(attempt.encode("utf-8"), password.encode("utf-8")):
-            st.session_state.authenticated = True
-            st.session_state.login_failures = 0
-            st.rerun()
-        time.sleep(1.5)  # slow down guessing
-        failures += 1
-        st.session_state.login_failures = failures
-        if failures >= 5:
-            st.session_state.locked_until = time.time() + 60
-            st.session_state.login_failures = 0
-        st.error("Wrong password.")
+        with st.form("login"):
+            attempt = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Log in", type="primary", width="stretch")
+        if submitted:
+            if hmac.compare_digest(attempt.encode("utf-8"), password.encode("utf-8")):
+                st.session_state.authenticated = True
+                st.session_state.login_failures = 0
+                st.rerun()
+            time.sleep(1.5)  # slow down guessing
+            failures += 1
+            st.session_state.login_failures = failures
+            if failures >= 5:
+                st.session_state.locked_until = time.time() + 60
+                st.session_state.login_failures = 0
+            st.error("Wrong password.")
     st.stop()
 
 
@@ -203,7 +223,8 @@ def save_to_history(text: str, parsed: dict, result) -> dict:
         "request": text.strip() or f"{describe_category(parsed)} in {parsed['location']}",
         "time": datetime.now().strftime("%H:%M"),
         "parsed": parsed,
-        "rows": table_rows(result.matched),
+        # Nothing matched: show every business found (the Excel file has them all too).
+        "rows": table_rows(result.matched or result.leads),
         "total": len(result.leads),
         "matched": len(result.matched),
         "filters_applied": result.filters_applied,
@@ -220,28 +241,25 @@ def save_to_history(text: str, parsed: dict, result) -> dict:
     return entry
 
 
+def _use_example() -> None:
+    """Clicking an example chip fills the request box."""
+    choice = st.session_state.get("example_pick")
+    if choice:
+        st.session_state.request_text = choice
+    st.session_state.example_pick = None
+
+
 # --- Sidebar -----------------------------------------------------------------
 
+st.logo(str(ui.ASSETS / "icon.png"), size="large")
 with st.sidebar:
-    st.header("How it works")
-    st.markdown(
-        "1. **Describe** the leads you want in plain language.\n"
-        "2. **Collect** businesses from **OpenStreetMap** (free, open data) and a "
-        "**limited Google Maps** browse.\n"
-        "3. **Merge** both sources and remove duplicates.\n"
-        "4. **Enrich** each business website with social media links and email.\n"
-        "5. **Filter & score** - businesses with more gaps (no website, no social "
-        "media...) score higher: more services to sell.\n"
-        "6. **Download** everything as an Excel file.\n\n"
-        + ("No paid services or API keys." if HOSTED
-           else "Everything runs on your computer. No paid services or API keys.")
-    )
-    st.divider()
-    st.header("Search history")
+    st.markdown(ui.sidebar_intro(HOSTED), unsafe_allow_html=True)
+    st.markdown('<div class="ls-section" style="margin-top:18px">🕘 Search history</div>',
+                unsafe_allow_html=True)
     if not st.session_state.history:
         st.caption("Your searches in this session will appear here.")
     for entry in reversed(st.session_state.history):
-        label = f"{entry['request'][:40]}  \n{entry['matched']} leads · {entry['time']}"
+        label = f"{entry['request'][:38]}  \n{entry['matched']} leads · {entry['time']}"
         if st.button(label, key=f"history_{entry['id']}", width="stretch",
                      type="primary" if entry["id"] == st.session_state.current else "secondary"):
             st.session_state.current = entry["id"]
@@ -257,19 +275,17 @@ with st.sidebar:
 
 # --- Search form -------------------------------------------------------------
 
-st.title("LeadScout AI — Lead Generation Tool")
-st.markdown(
-    "Find local businesses that need your services. Describe what you're looking for, "
-    "and LeadScout collects businesses, checks their websites and social media, and ranks "
-    "them by how much they could use your help."
-)
+st.markdown(ui.hero(HOSTED), unsafe_allow_html=True)
 
 text = st.text_input(
-    "What leads are you looking for?",
+    "🔍 What leads are you looking for?",
     placeholder="e.g. restaurants in Lahore that need a website",
+    key="request_text",
 )
+st.pills("Try an example", EXAMPLES, key="example_pick", on_change=_use_example,
+         label_visibility="collapsed")
 
-with st.expander("Advanced Options (override the request manually)"):
+with st.expander("⚙️ Advanced Options"):
     col1, col2 = st.columns(2)
     category_choice = col1.selectbox("Category", CATEGORY_CHOICES)
     location_override = col2.text_input("Location", placeholder="From my request, e.g. Karachi")
@@ -296,15 +312,18 @@ with st.expander("Advanced Options (override the request manually)"):
 
 request = build_request(text, category_choice, location_override, manual_filters)
 if text.strip() or location_override.strip() or filter_text.strip():
-    st.caption(
-        f"**Understood as:** {describe_category(request)} · "
-        f"{request['location'] or '⚠️ no location yet'} · {describe_filters(request['filters'])}"
-    )
+    st.markdown(ui.understood(describe_category(request), request["location"],
+                              describe_filters(request["filters"])), unsafe_allow_html=True)
 
-find = st.button("Find Leads", type="primary")
+find = st.button("🚀  Find Leads", type="primary")
 
 
 # --- Run the pipeline --------------------------------------------------------
+
+_COUNT_RE = re.compile(r"^(\d+) found on ")
+_UNIQUE_RE = re.compile(r"^(\d+) unique businesses")
+_MATCH_RE = re.compile(r"^(\d+) of \d+ match")
+_ITEM_RE = re.compile(r"^\[(\d+)/(\d+)\]")
 
 if find:
     if not request["location"]:
@@ -314,24 +333,53 @@ if find:
         many = len(request["categories"]) > 1
         maps_cap = config.ALL_CATEGORIES_MAPS_MAX if many else config.MAPS_MAX_RESULTS_CAP
         started = time.monotonic()
-        st.info("This can take a few minutes. Please keep this tab open and don't change the "
-                "inputs until it finishes.")
-        status = st.status("Finding leads...", expanded=True)
-        bar = status.progress(0.0, text="Starting...")
-        detail = status.empty()
+
+        left, right = st.columns([1, 1.25], gap="medium")
+        left.markdown(ui.radar(), unsafe_allow_html=True)  # rendered once: animation never restarts
+        live = right.empty()
+        progress = {"stage": "collect", "fraction": 0.0, "unique": 0, "pending": 0,
+                    "websites": "–", "matched": "–", "now": "Starting up…", "notes": [],
+                    "span": (0.0, 0.0)}
+
+        def render() -> None:
+            live.markdown(ui.live_panel(
+                progress["stage"], progress["fraction"], int(time.monotonic() - started),
+                progress["unique"] + progress["pending"], progress["websites"],
+                progress["matched"], progress["now"], progress["notes"], GOOGLE_MAPS_DEFAULT),
+                unsafe_allow_html=True)
 
         def on_progress(stage: str, message: str, fraction: float | None) -> None:
             if stage == "detail":
-                detail.caption(message)
+                progress["now"] = message
+                if m := _COUNT_RE.match(message):
+                    progress["pending"] += int(m.group(1))
+                elif m := _UNIQUE_RE.match(message):
+                    progress["unique"] += int(m.group(1))
+                    progress["pending"] = 0
+                elif m := _MATCH_RE.match(message):
+                    progress["matched"] = m.group(1)
+                elif m := _ITEM_RE.match(message):
+                    done_items, total_items = int(m.group(1)), int(m.group(2))
+                    if progress["stage"] == "enrich":
+                        progress["websites"] = f"{done_items}/{total_items}"
+                    # Move the bar within the current long step (Google Maps listings,
+                    # website checks) instead of leaving it still for minutes.
+                    start, end = progress["span"]
+                    if total_items:
+                        progress["fraction"] = start + (end - start) * done_items / total_items
             elif stage == "warning":
-                status.warning(message)
-            else:
-                if stage in ("collect", "osm", "maps", "merge", "enrich", "score", "export"):
-                    status.write(f"⏳ {message}")
-                if fraction is not None:
-                    elapsed = int(time.monotonic() - started)
-                    bar.progress(min(max(fraction, 0.0), 1.0), text=f"{message}  ({elapsed}s)")
+                progress["notes"].append(message)
+            elif stage != "done":
+                progress["stage"], progress["now"] = stage, message
+            if fraction is not None:
+                progress["fraction"] = fraction
+                # Range the bar may fill during this step (see modules.pipeline fractions).
+                share = 0.70 / len(request["categories"])
+                progress["span"] = {"maps": (fraction, fraction + share * 0.8),
+                                    "enrich": (fraction, 0.90)}.get(stage, (fraction, fraction))
+            render()
 
+        render()
         try:
             result = run_pipeline(request, osm_max=max_results,
                                   maps_max=min(max_results, maps_cap),
@@ -339,20 +387,19 @@ if find:
         except Exception as exc:  # noqa: BLE001 - never show a raw crash to the user
             import logging
             logging.getLogger("leadscout.app").exception("Pipeline crashed")
-            status.update(label="Something went wrong", state="error", expanded=True)
+            live.empty()
             st.error(f"The search stopped unexpectedly: {exc}. Details are in the log file"
                      f"{f' ({LOG_PATH})' if LOG_PATH else ''}.")
         else:
-            detail.empty()
-            state = "error" if result.errors and not result.leads else "complete"
-            status.update(
-                label=f"Done: {len(result.matched)} matching leads out of {len(result.leads)} "
-                      f"found ({int(result.seconds // 60)}m {int(result.seconds % 60)}s)",
-                state=state, expanded=False)
             if result.leads:
+                live.markdown(ui.done_panel(len(result.matched), len(result.leads), result.seconds),
+                              unsafe_allow_html=True)
                 save_to_history(text, request, result)
+                st.session_state.celebrate = len(result.matched)
+                time.sleep(1.2)  # let the success animation play
                 st.rerun()  # redraw so the sidebar history includes this search
             else:
+                live.empty()
                 st.warning("No businesses were found. Try a different area or business type.")
                 for error in result.errors:
                     st.error(error)
@@ -360,19 +407,27 @@ if find:
 
 # --- Results -----------------------------------------------------------------
 
+if (celebrate := st.session_state.pop("celebrate", None)) is not None:
+    if celebrate:
+        st.toast(f"{celebrate} leads ready - scroll down to see them!", icon="🎉")
+    else:
+        st.toast("Search finished - no business matched your filters.", icon="🔎")
+
 entry = next((e for e in st.session_state.history if e["id"] == st.session_state.current), None)
 if entry:
-    st.divider()
-    st.subheader(f"Results: {entry['request']}")
-    st.caption(f"{describe_category(entry['parsed'])} · {entry['parsed']['location']} · "
-               f"{describe_filters(entry['parsed']['filters'])}")
+    st.markdown(ui.results_header(
+        f"Results: {entry['request']}",
+        f"{describe_category(entry['parsed'])} · {entry['parsed']['location']} · "
+        f"{describe_filters(entry['parsed']['filters'])}"), unsafe_allow_html=True)
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Leads Found", entry["total"])
-    m2.metric("Leads Matching Filters",
-              entry["matched"] if entry["filters_applied"] else "n/a")
-    m3.metric("Average Lead Score",
-              f"{entry['average_score']:.0f}" if entry["average_score"] is not None else "–")
+    secs = int(entry["seconds"] or 0)
+    st.markdown(ui.metrics([
+        ("🏢", entry["total"], "Total leads found"),
+        ("🎯", entry["matched"] if entry["filters_applied"] else "n/a", "Leads matching filters"),
+        ("🔥", f"{entry['average_score']:.0f}" if entry["average_score"] is not None else "–",
+         "Average lead score"),
+        ("⏱️", f"{secs // 60}m {secs % 60:02d}s", "Search time"),
+    ]), unsafe_allow_html=True)
 
     if entry["errors"]:
         st.warning(
@@ -383,27 +438,35 @@ if entry:
     if not entry["filters_applied"]:
         st.warning("The filters could not be applied, so all businesses are shown.")
     if entry["matched"] == 0:
-        st.info("No businesses matched your filters. The Excel file contains all businesses found.")
+        st.info("No business matched your filters, so all businesses found are shown below "
+                "(the Excel file contains them too). Try fewer or different filters.")
 
     if entry["file_bytes"]:
         if entry["file_is_excel"]:
-            st.download_button("⬇️ Download Excel File", entry["file_bytes"],
+            st.download_button("⬇️  Download Excel File", entry["file_bytes"],
                                file_name=entry["file_name"], mime=XLSX_MIME, type="primary")
         else:
             st.warning("The Excel file couldn't be created, so the results were saved as JSON.")
-            st.download_button("⬇️ Download results (JSON)", entry["file_bytes"],
+            st.download_button("⬇️  Download results (JSON)", entry["file_bytes"],
                                file_name=entry["file_name"], mime="application/json")
 
     if entry["rows"]:
+        if entry["matched"]:
+            st.markdown('<div class="ls-section" style="margin-top:14px">🔥 Top opportunities</div>',
+                        unsafe_allow_html=True)
+            st.markdown(ui.top_opportunities(entry["rows"]), unsafe_allow_html=True)
+
+        st.markdown(f'<div class="ls-section">📋 {"All leads" if entry["matched"] else "All businesses found"}'
+                    '</div>', unsafe_allow_html=True)
         df = pd.DataFrame(entry["rows"], columns=COLUMN_HEADERS)
-        search = st.text_input("Search results", placeholder="Type to filter by any column...",
-                               key=f"search_{entry['id']}")
+        search = st.text_input("Search results", placeholder="🔎 Type to filter by any column...",
+                               key=f"search_{entry['id']}", label_visibility="collapsed")
         if search:
             mask = df.astype(str).apply(
                 lambda col: col.str.contains(search, case=False, regex=False)).any(axis=1)
             df = df[mask]
-        st.caption(f"Showing {len(df)} of {len(entry['rows'])} leads · click a column header to "
-                   "sort · red = key gap (no phone/website), orange = other missing info")
+        st.markdown(ui.legend(), unsafe_allow_html=True)
+        st.caption(f"Showing {len(df)} of {len(entry['rows'])} leads")
         st.dataframe(
             style_missing(df),
             width="stretch",
@@ -419,12 +482,4 @@ if entry:
 
 # --- Footer ------------------------------------------------------------------
 
-st.divider()
-if HOSTED:
-    st.caption("Online demo: files are not kept on the server - use **Download Excel File** to "
-               "save your results. Searches run on a cloud server, where Google Maps is often "
-               "blocked; for complete results run LeadScout on your own computer.")
-st.caption("Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) "
-           "(ODbL).")
-st.caption("LeadScout AI uses only free and legal data sources (OpenStreetMap + limited Google "
-           "Maps browsing). No paid API keys required.")
+st.markdown(ui.footer(HOSTED), unsafe_allow_html=True)

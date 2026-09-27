@@ -9,6 +9,10 @@ pinned: false
 short_description: Find local businesses that need a website or social media
 ---
 
+<p align="center">
+  <img src="assets/logo.png" alt="LeadScout AI - Lead Generation Tool" width="240">
+</p>
+
 # LeadScout AI
 
 A free, local lead-generation tool. LeadScout AI collects business leads

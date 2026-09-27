@@ -14,7 +14,7 @@ echo Installing dependencies...
 
 echo Building...
 .venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --onedir --console ^
-    --name LeadScout ^
+    --name LeadScout --icon assets\icon.ico ^
     --collect-data playwright ^
     main.py || goto :error
 

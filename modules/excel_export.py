@@ -14,7 +14,7 @@ import config
 
 # --- Styles ------------------------------------------------------------------
 
-HEADER_FILL = PatternFill("solid", start_color="1F4E78")
+HEADER_FILL = PatternFill("solid", start_color="00163F")  # brand navy
 HEADER_FONT = Font(bold=True, color="FFFFFF")
 MISSING_RED = PatternFill("solid", start_color="FFC7CE")     # key gap: website / phone
 MISSING_ORANGE = PatternFill("solid", start_color="FCE4D6")  # secondary gap
@@ -98,36 +98,54 @@ def _resolve_path(filename: str) -> Path:
     return path
 
 
+LOGO_FILE = Path(__file__).resolve().parent.parent / "assets" / "logo.png"
+LOGO_ROWS = 7  # rows kept free at the top of the About sheet for the logo
+
+
 def _add_about_sheet(wb: Workbook, category: str, location: str) -> None:
-    """Second sheet: search details, data sources and the required OSM attribution."""
+    """Second sheet: logo, search details, data sources and the required OSM attribution."""
     ws = wb.create_sheet("About")
+    ws.sheet_view.showGridLines = False
+    try:
+        from openpyxl.drawing.image import Image as XLImage
+
+        logo = XLImage(str(LOGO_FILE))
+        logo.width = logo.height = 130
+        ws.add_image(logo, "A1")
+        first_row = LOGO_ROWS + 1
+    except Exception:  # noqa: BLE001 - no logo (or Pillow missing): the sheet still works
+        first_row = 1
+
     rows = [
-        ("LeadScout AI - lead export", None),
-        ("", None),
-        ("Search", f"{category.replace('_', ' ') or 'all'} in {location or '-'}"),
-        ("Generated", datetime.now().strftime("%Y-%m-%d %H:%M")),
-        ("", None),
-        ("Data sources", None),
+        ("LeadScout AI - lead export", None, "title"),
+        ("Search", f"{category.replace('_', ' ') or 'all'} in {location or '-'}", None),
+        ("Generated", datetime.now().strftime("%Y-%m-%d %H:%M"), None),
+        ("", None, None),
+        ("Data sources", None, "heading"),
         ("OpenStreetMap", "Map data © OpenStreetMap contributors, available under the "
-                          "Open Database License (ODbL): https://www.openstreetmap.org/copyright"),
-        ("Google Maps", "Public business listings, collected in small numbers for reference."),
-        ("Websites", "Social media links and emails found on each business's own homepage."),
-        ("", None),
-        ("Colour legend", None),
-        ("Red cell", "Key gap: no phone number, or no real website (none, or only a social page)."),
-        ("Orange cell", "Other missing info (email, social profiles, address) or a broken website."),
-        ("Lead Score", "0-100. Higher = more gaps = more services you could offer."),
+                          "Open Database License (ODbL): https://www.openstreetmap.org/copyright", None),
+        ("Google Maps", "Public business listings, collected in small numbers for reference.", None),
+        ("Websites", "Social media links and emails found on each business's own homepage.", None),
+        ("", None, None),
+        ("Colour legend", None, "heading"),
+        ("Red cell", "Key gap: no phone number, or no real website (none, or only a social page).", "red"),
+        ("Orange cell", "Other missing info (email, social profiles, address) or a broken website.", "orange"),
+        ("Lead Score", "0-100. Higher = more gaps = more services you could offer.", None),
     ]
-    for label, value in rows:
-        ws.append([label, value])
-    ws["A1"].font = Font(bold=True, size=14)
-    for cell in ("A6", "A11"):
-        ws[cell].font = Font(bold=True)
-    ws["A12"].fill, ws["A13"].fill = MISSING_RED, MISSING_ORANGE
+    for offset, (label, value, style) in enumerate(rows):
+        r = first_row + offset
+        ws.cell(row=r, column=1, value=label)
+        ws.cell(row=r, column=2, value=value).alignment = Alignment(wrap_text=True, vertical="top")
+        if style == "title":
+            ws.cell(row=r, column=1).font = Font(bold=True, size=14, color="00163F")
+        elif style == "heading":
+            ws.cell(row=r, column=1).font = Font(bold=True, color="0263E6")
+        elif style == "red":
+            ws.cell(row=r, column=1).fill = MISSING_RED
+        elif style == "orange":
+            ws.cell(row=r, column=1).fill = MISSING_ORANGE
     ws.column_dimensions["A"].width = 18
     ws.column_dimensions["B"].width = 100
-    for row in ws.iter_rows(min_row=2):
-        row[1].alignment = Alignment(wrap_text=True, vertical="top")
 
 
 def _sort_key(b: dict):
@@ -237,6 +255,8 @@ def export_to_excel(business_list: list[dict], filename: str | None = None, *,
     )
 
     _add_about_sheet(wb, category, location)
+    wb.properties.title = "LeadScout AI - lead export"
+    wb.properties.creator = "LeadScout AI"
 
     path = _resolve_path(filename)
     try:
