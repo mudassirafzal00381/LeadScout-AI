@@ -174,6 +174,7 @@ time. Choose "More info" → "Run anyway", or code-sign the exe for production.
 | `LEADSCOUT_PHONE_COUNTRY_CODE` | `92` (Pakistan) | Country code for local phone numbers |
 | `LEADSCOUT_PASSWORD` | (unset = no login) | Password for the web app. Set it only as a secret, never in code |
 | `LEADSCOUT_GOOGLE_MAPS` | `1` | `0` skips Google Maps (OpenStreetMap only) |
+| `LEADSCOUT_REQUIRE_PHONE` | `1` | Every lead must have a phone number; missing ones are looked up on Google Maps (up to `PHONE_LOOKUP_MAX` per search) and leads still without one are left out. `0` keeps them |
 | `LEADSCOUT_CONTACT` | this GitHub repo | Contact URL/email sent to OpenStreetMap, as its usage policy requires |
 
 ## Online demo on Streamlit Community Cloud (free, recommended)

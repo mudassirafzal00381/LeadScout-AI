@@ -104,7 +104,7 @@ def _print_progress(stage: str, message: str, fraction: float | None) -> None:
     if stage in _STAGE_HEADINGS:
         extra = " (Ctrl+C to stop early and keep what's found)" if stage == "collect" else ""
         print(f"\n{_STAGE_HEADINGS[stage]} {message}{extra}")
-    elif stage in ("osm", "maps", "merge"):
+    elif stage in ("osm", "maps", "merge", "phones"):
         print(f"    {message}")
     elif stage == "detail":
         print(f"      {message}")
@@ -155,6 +155,9 @@ def print_summary(text: str, result, log_path: Path | None) -> None:
           f"Google Maps {result.maps_count}, after removing duplicates)")
     matched = len(result.matched) if result.filters_applied else "n/a (filters could not be applied)"
     print(f"  Matched filters  : {matched}")
+    if result.phones_looked_up or result.dropped_no_phone:
+        print(f"  Phone numbers    : {result.phones_found} found by lookup; "
+              f"{result.dropped_no_phone} businesses without a phone left out")
     print(f"  Saved to         : {result.output_path or '(nothing saved)'}")
     print(f"  Time taken       : {_elapsed(result.seconds)}")
     if result.stopped_early:

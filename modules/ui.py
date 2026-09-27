@@ -253,7 +253,7 @@ div[data-testid="stPills"] button {{ border-radius: 999px !important; }}
   background: linear-gradient(90deg, var(--blue), var(--sky), var(--blue)); background-size: 200% 100%;
   animation: ls-shimmer 1.6s linear infinite; }}
 .ls-barinfo {{ display: flex; justify-content: space-between; font-size: .8rem; color: var(--muted); font-weight: 600; }}
-.ls-counters {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }}
+.ls-counters {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 16px 0; }}
 .ls-counter {{ background: var(--soft); border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; }}
 .ls-counter .v {{ font-size: 1.45rem; font-weight: 800; color: var(--ink); }}
 .ls-counter .l {{ font-size: .74rem; color: var(--muted); font-weight: 600; }}
@@ -404,7 +404,7 @@ def footer(hosted: bool) -> str:
 # --- Search animation --------------------------------------------------------
 
 TIPS = [
-    "<b>Tip:</b> add “and have a phone number” to get only leads you can call.",
+    "<b>Good to know:</b> every lead gets a phone number - we look missing ones up for you.",
     "<b>Did you know?</b> Businesses without a website are often the easiest to sell a site to.",
     "<b>Tip:</b> the Excel file has an About sheet with sources and a colour legend.",
     "<b>Did you know?</b> Every website is checked for Facebook, Instagram, LinkedIn and email.",
@@ -413,6 +413,7 @@ TIPS = [
 
 STEPS = [("collect", "🧭", "Understanding the area"), ("osm", "🌍", "Scanning OpenStreetMap"),
          ("maps", "🗺️", "Browsing Google Maps"), ("merge", "🧩", "Merging duplicates"),
+         ("phones", "📞", "Finding phone numbers"),
          ("enrich", "🔗", "Checking websites & socials"), ("score", "🎯", "Scoring leads"),
          ("export", "📊", "Building your Excel file")]
 
@@ -443,10 +444,10 @@ def radar() -> str:
 </div>"""
 
 
-def live_panel(stage: str, fraction: float, elapsed: int, found: int, websites: str,
+def live_panel(stage: str, fraction: float, elapsed: int, found: int, phones: int, websites: str,
                matched: str, now: str, notes: list[str], google_maps: bool) -> str:
     """The changing half of the search screen (re-rendered on every progress event)."""
-    order = [s for s in STEPS if google_maps or s[0] != "maps"]
+    order = [s for s in STEPS if google_maps or s[0] not in ("maps", "phones")]
     keys = [s[0] for s in order]
     active = keys.index(stage) if stage in keys else (len(keys) if stage == "done" else 0)
     items = []
@@ -465,6 +466,7 @@ def live_panel(stage: str, fraction: float, elapsed: int, found: int, websites: 
   <div class="ls-barinfo"><span>{pct}% complete</span><span>⏱ {mins}:{secs:02d}</span></div>
   <div class="ls-counters">
     <div class="ls-counter"><div class="v">{esc(found)}</div><div class="l">Businesses found</div></div>
+    <div class="ls-counter"><div class="v">{esc(phones)}</div><div class="l">Phone numbers</div></div>
     <div class="ls-counter"><div class="v">{esc(websites)}</div><div class="l">Websites checked</div></div>
     <div class="ls-counter"><div class="v">{esc(matched)}</div><div class="l">Matching leads</div></div>
   </div>

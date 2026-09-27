@@ -190,7 +190,7 @@ def filter_leads(business_list: list[dict], rules=None, mode: str = "AND") -> li
     rules: a list of rules (see module docstring), combined with `mode`
            ("AND" or "OR"). None or [] keeps every business.
     Every business in business_list gets "lead_score" and "missing_fields".
-    Ties are broken by: has a phone (contactable) first, then more reviews.
+    Ties are broken by: has a phone first, then has an email, then more reviews.
     """
     mode = mode.upper()
     if mode not in ("AND", "OR"):
@@ -203,6 +203,7 @@ def filter_leads(business_list: list[dict], rules=None, mode: str = "AND") -> li
     matched = [b for b in business_list if not rules or _evaluate(b, spec)]
     return sorted(
         matched,
-        key=lambda b: (b["lead_score"], bool(b.get("phone")), b.get("review_count") or 0),
+        key=lambda b: (b["lead_score"], bool(b.get("phone")), bool(b.get("email")),
+                       b.get("review_count") or 0),
         reverse=True,
     )

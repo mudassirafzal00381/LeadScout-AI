@@ -263,3 +263,122 @@ def collect_from_google_maps(category: str, location: str, max_results: int = 50
                     "servers; try again later, or run LeadScout on your own computer.")
 
     return leads
+
+
+# --- Phone lookup for leads found elsewhere ----------------------------------
+
+LOOKUP_NAME_MATCH = 80        # rapidfuzz similarity needed to accept a Google listing
+LOOKUP_MAX_DISTANCE_M = 3000  # reject a listing this far from the lead's known location
+
+
+def _distance_m(lat1, lon1, lat2, lon2) -> float | None:
+    import math
+    if None in (lat1, lon1, lat2, lon2):
+        return None
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    h = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
+    return 6_371_000 * 2 * math.asin(math.sqrt(h))
+
+
+def _same_business(lead: dict, found: dict) -> bool:
+    from rapidfuzz import fuzz
+    a, b = lead["name"].lower(), found["name"].lower()
+    if not a or not b:
+        return False
+    if max(fuzz.token_set_ratio(a, b), fuzz.WRatio(a, b)) < LOOKUP_NAME_MATCH:
+        return False
+    distance = _distance_m(lead.get("latitude"), lead.get("longitude"),
+                           found.get("latitude"), found.get("longitude"))
+    return distance is None or distance <= LOOKUP_MAX_DISTANCE_M
+
+
+LOOKUP_TIMEOUT_MS = 15_000
+
+
+def _visible_cards(page, limit: int) -> list[dict]:
+    """Read the result cards already on screen (no scrolling - lookups only need the top few)."""
+    cards = []
+    for link in page.locator(SELECTORS["card_link"]).all()[:limit]:
+        try:
+            href = link.get_attribute("href", timeout=2000) or ""
+            name = (link.get_attribute("aria-label", timeout=2000) or "").strip()
+            if href and name:
+                cards.append({"name": name, "url": href, "rating": None, "review_count": None})
+        except PlaywrightTimeout:
+            continue
+    return cards
+
+
+def _lookup_one(page, lead: dict, location: str) -> dict | None:
+    """Search Google Maps for one business by name; return its listing if it matches."""
+    from rapidfuzz import fuzz
+
+    query = urllib.parse.quote_plus(f"{lead['name']} {location}")
+    page.goto(MAPS_SEARCH_URL.format(query=query), wait_until="domcontentloaded",
+              timeout=LOOKUP_TIMEOUT_MS)
+    _handle_consent(page)
+    if _is_blocked(page):
+        raise GoogleMapsBlocked("Google showed a CAPTCHA / unusual-traffic page.")
+
+    # A precise name usually opens the place directly; otherwise a result list appears.
+    try:
+        page.wait_for_selector(f'{SELECTORS["feed"]}, {SELECTORS["address"]}, {SELECTORS["phone"]}',
+                               timeout=LOOKUP_TIMEOUT_MS)
+    except PlaywrightTimeout:
+        return None
+    if page.locator(SELECTORS["feed"]).count():
+        page.wait_for_timeout(800)  # let the first cards render
+        cards = _visible_cards(page, 6)
+        if not cards:
+            return None
+        card = max(cards, key=lambda c: fuzz.WRatio(lead["name"].lower(), c["name"].lower()))
+    else:
+        card = {"name": "", "url": page.url, "rating": None, "review_count": None}
+    found = _scrape_place(page, card, lead.get("category") or "")
+    return found if _same_business(lead, found) else None
+
+
+def lookup_missing_details(leads: list[dict], location: str, max_lookups: int) -> dict:
+    """Find phone numbers (and other missing details) on Google Maps for leads without a phone.
+
+    Leads are updated in place: empty phone, website, address, rating and
+    review count are filled from the matching Google listing. Returns counts:
+    {"looked_up": n, "phones_found": n}.
+    """
+    targets = [lead for lead in leads if not lead.get("phone") and lead.get("name")][:max_lookups]
+    stats = {"looked_up": 0, "phones_found": 0}
+    if not targets:
+        return stats
+
+    with sync_playwright() as p:
+        browser, _ = launch_browser(p)
+        try:
+            page = browser.new_context(locale="en-US", viewport={"width": 1280, "height": 900}).new_page()
+            for i, lead in enumerate(targets, 1):
+                try:
+                    _pause(0.6)
+                    found = _lookup_one(page, lead, location)
+                    stats["looked_up"] += 1
+                    if found:
+                        from modules.merge import normalize_phone, normalize_website
+                        found["phone"] = normalize_phone(found.get("phone") or "")
+                        found["website"] = normalize_website(found.get("website") or "")
+                        for field in ("phone", "website", "address", "rating", "review_count"):
+                            if lead.get(field) in ("", None) and found.get(field) not in ("", None):
+                                lead[field] = found[field]
+                        if found.get("phone"):
+                            stats["phones_found"] += 1
+                            lead["source"] = ", ".join(dict.fromkeys(
+                                [s for s in (lead.get("source") or "").split(", ") if s] + ["Google Maps"]))
+                    log.info("  [%d/%d] %s: %s", i, len(targets), lead["name"],
+                             lead.get("phone") or "no phone found")
+                except GoogleMapsBlocked:
+                    log.error("Google started blocking lookups; stopping early.")
+                    break
+                except Exception as exc:  # noqa: BLE001 - one failed lookup must not stop the rest
+                    log.warning("  [%d/%d] %s: lookup failed (%s)", i, len(targets), lead["name"],
+                                str(exc).splitlines()[0])
+        finally:
+            browser.close()
+    return stats

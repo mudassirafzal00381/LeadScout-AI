@@ -161,7 +161,10 @@ def extract_social_links(soup: BeautifulSoup, html: str, base_url: str) -> dict:
             if link and "whatsapp" not in found:
                 found["whatsapp"] = link
             continue
-        url = urllib.parse.urljoin(base_url, href)
+        try:
+            url = urllib.parse.urljoin(base_url, href)
+        except ValueError:  # malformed link, e.g. "https://[a-z]..." - skip it
+            continue
         platform = _match_platform(url)
         if platform and platform not in found:
             cleaned = _clean_social_url(url, platform)
@@ -239,6 +242,51 @@ def extract_email(soup: BeautifulSoup, website: str) -> str:
 
 # --- Public API --------------------------------------------------------------
 
+# Phone-like text: optional +/00, then digits with spaces, dashes, dots or brackets.
+_PHONE_TEXT_RE = re.compile(r"(?<![\w/])(?:\+|00)?\(?\d[\d\s().-]{7,17}\d(?![\w/])")
+
+
+def extract_phone(soup: BeautifulSoup) -> str:
+    """Return the most likely business phone on the page (normalized), or ""."""
+    from modules.merge import normalize_phone
+
+    candidates = []
+    for a in soup.select('a[href^="tel:" i]'):  # click-to-call links are the most reliable
+        candidates.append(urllib.parse.unquote(a["href"][4:]))
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+    text = soup.get_text(" ")
+    for match in _PHONE_TEXT_RE.finditer(text):
+        raw = match.group()
+        digits = re.sub(r"\D", "", raw)
+        # Real phone numbers: 10-13 digits, starting like a national or international number.
+        if 10 <= len(digits) <= 13 and (raw.lstrip("( ").startswith(("+", "0")) or
+                                        digits.startswith(config.DEFAULT_PHONE_COUNTRY_CODE)):
+            candidates.append(raw)
+    for raw in candidates:
+        number = normalize_phone(raw).split("; ")[0]
+        if number.startswith("+") and 11 <= len(number) <= 14:
+            return number
+    return ""
+
+
+def _contact_page_url(soup: BeautifulSoup, base_url: str) -> str:
+    """Find a same-site "Contact" page link on the homepage, if any."""
+    base_host = (urllib.parse.urlsplit(base_url).hostname or "").removeprefix("www.")
+    for a in soup.find_all("a", href=True):
+        label = f'{a.get("href", "")} {a.get_text(" ", strip=True)}'.lower()
+        if "contact" not in label:
+            continue
+        try:
+            url = urllib.parse.urljoin(base_url, a["href"])
+            host = (urllib.parse.urlsplit(url).hostname or "").removeprefix("www.")
+        except ValueError:  # malformed link, e.g. "https://[a-z]..." - skip it
+            continue
+        if url.startswith("http") and host == base_host and url.rstrip("/") != base_url.rstrip("/"):
+            return url.split("#")[0]
+    return ""
+
+
 def enrich_with_social_and_contact(business_list: list[dict]) -> list[dict]:
     """Add "social_media", "email" and "website_status" to each business.
 
@@ -247,7 +295,7 @@ def enrich_with_social_and_contact(business_list: list[dict]) -> list[dict]:
     """
     to_fetch = {b["website"].strip() for b in business_list
                 if (b.get("website") or "").strip() and not _match_platform(b["website"])}
-    cache: dict[str, tuple[str, dict, str]] = {}  # website -> (status, social, email)
+    cache: dict[str, tuple[str, dict, str, str]] = {}  # website -> (status, social, email, phone)
 
     for business in business_list:
         business.setdefault("social_media", {})
@@ -271,27 +319,45 @@ def enrich_with_social_and_contact(business_list: list[dict]) -> list[dict]:
                 low = config.ENRICHMENT_REQUEST_DELAY
                 time.sleep(random.uniform(low, low * 1.5))
             cache[website] = _enrich_one(website, len(cache) + 1, len(to_fetch))
-        status, social, email = cache[website]
+        status, social, email, phone = cache[website]
         business["website_status"] = status
         for name, url in social.items():
             business["social_media"].setdefault(name, url)
         business["email"] = business["email"] or email
+        business["phone"] = business.get("phone") or phone
     return business_list
 
 
-def _enrich_one(website: str, index: int, total: int) -> tuple[str, dict, str]:
-    """Fetch one website and return (status, social_media, email). Never raises."""
+def _enrich_one(website: str, index: int, total: int) -> tuple[str, dict, str, str]:
+    """Fetch one website (plus its Contact page if needed).
+
+    Returns (status, social_media, email, phone). Never raises.
+    """
     try:
         status, html = _fetch_html(website)
         if status != "ok":
             log.info("  [%d/%d] %s: skipped (%s)", index, total, website, status)
-            return status, {}, ""
+            return status, {}, "", ""
         soup = BeautifulSoup(html, "html.parser")
         social = extract_social_links(soup, html, website)
+        contact_url = _contact_page_url(soup, website)
         email = extract_email(soup, website)
-        log.info("  [%d/%d] %s: %d social, email=%s", index, total, website,
-                 len(social), email or "-")
-        return "ok", social, email
+        phone = extract_phone(soup)
+
+        # Many small businesses show their email/phone only on the Contact page.
+        if contact_url and (not email or not phone):
+            time.sleep(random.uniform(0.5, 1.0))
+            c_status, c_html = _fetch_html(contact_url)
+            if c_status == "ok":
+                c_soup = BeautifulSoup(c_html, "html.parser")
+                for name, url in extract_social_links(c_soup, c_html, contact_url).items():
+                    social.setdefault(name, url)
+                email = email or extract_email(c_soup, website)
+                phone = phone or extract_phone(c_soup)
+
+        log.info("  [%d/%d] %s: %d social, email=%s, phone=%s", index, total, website,
+                 len(social), email or "-", phone or "-")
+        return "ok", social, email, phone
     except Exception as exc:  # noqa: BLE001 - one bad site must not stop the run
         log.warning("  [%d/%d] %s: failed (%s)", index, total, website, exc)
-        return "error", {}, ""
+        return "error", {}, "", ""

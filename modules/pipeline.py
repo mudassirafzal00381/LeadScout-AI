@@ -19,14 +19,14 @@ import config
 from modules.enrichment import enrich_with_social_and_contact
 from modules.excel_export import build_filename, export_to_excel
 from modules.filters import filter_leads, score_leads
-from modules.maps_collector import collect_from_google_maps
+from modules.maps_collector import collect_from_google_maps, lookup_missing_details
 from modules.merge import merge_and_deduplicate
 from modules.osm_collector import collect_from_osm
 
 log = logging.getLogger(__name__)
 
 # on_progress(stage, message, fraction 0-1 or None)
-# stage is one of: "collect", "osm", "maps", "merge", "enrich", "score", "export",
+# stage is one of: "collect", "osm", "maps", "merge", "phones", "enrich", "score", "export",
 # "done", "warning", "detail" (item-level lines such as "[3/20] Monal Lahore").
 ProgressCallback = Callable[[str, str, float | None], None]
 
@@ -36,11 +36,16 @@ class PipelineResult:
     parsed: dict
     leads: list[dict] = field(default_factory=list)     # all businesses found (scored)
     matched: list[dict] = field(default_factory=list)   # businesses matching the filters
+    exported: list[dict] = field(default_factory=list)  # what went into the file (matched, or
+                                                        # every lead with a phone if none matched)
     output_path: Path | None = None
     errors: list[str] = field(default_factory=list)
     osm_count: int = 0
     maps_count: int = 0
     filters_applied: bool = True
+    phones_looked_up: int = 0      # businesses searched on Google Maps for a phone number
+    phones_found: int = 0          # of those, how many got a phone number
+    dropped_no_phone: int = 0      # left out because no phone number could be found
     stopped_early: bool = False
     seconds: float = 0.0
 
@@ -154,7 +159,24 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
             progress("done", "No businesses were found.", 1.0)
             return result
 
-        # 2. Enrich (70% - 90%) ------------------------------------------------
+        # 2. Phone numbers (60% - 72%) ----------------------------------------
+        missing = [b for b in leads if not b.get("phone")]
+        if missing and use_google_maps and config.PHONE_LOOKUP_MAX > 0:
+            n = min(len(missing), config.PHONE_LOOKUP_MAX)
+            progress("phones", f"Finding phone numbers on Google Maps ({n} businesses)...", 0.60)
+            try:
+                stats = step("Phone lookup", lookup_missing_details, missing, location,
+                             config.PHONE_LOOKUP_MAX, fallback={})
+            except KeyboardInterrupt:
+                result.stopped_early = True
+                stats = {}
+                progress("warning", "Phone lookup stopped early; continuing.", None)
+            result.phones_looked_up = stats.get("looked_up", 0)
+            result.phones_found = stats.get("phones_found", 0)
+            progress("detail", f"{result.phones_found} of {result.phones_looked_up} "
+                               "phone numbers found", None)
+
+        # 3. Enrich (72% - 90%) ------------------------------------------------
         with_site = sum(1 for b in leads if b.get("website"))
         progress("enrich", f"Enriching with social media ({with_site} websites to check)...", 0.72)
         try:
@@ -163,9 +185,15 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
             result.stopped_early = True
             progress("warning", "Enrichment stopped early; continuing without the rest.", None)
 
-        # 3. Filter and score (90% - 95%) -------------------------------------
+        # 4. Filter and score (90% - 95%) -------------------------------------
         progress("score", f"Scoring leads ({len(leads)} businesses)...", 0.90)
-        matched = step("Filtering", filter_leads, leads, parsed["filters"], fallback=None)
+        rules = list(parsed["filters"])
+        # A phone number is required for every lead (unless the user asked for
+        # businesses WITHOUT a phone, which would contradict it).
+        if config.REQUIRE_PHONE and "no_phone" not in rules and "has_phone" not in rules:
+            rules.append("has_phone")
+            result.dropped_no_phone = sum(1 for b in leads if not b.get("phone"))
+        matched = step("Filtering", filter_leads, leads, rules, fallback=None)
         if matched is None:  # e.g. an invalid rule: keep everything, still scored
             step("Scoring", score_leads, leads)
             matched = sorted(leads, key=lambda b: b.get("lead_score") or 0, reverse=True)
@@ -174,10 +202,13 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
         result.matched = matched
         progress("detail", f"{len(matched)} of {len(leads)} match the filters", None)
 
-        # 4. Export (95% - 100%) ----------------------------------------------
+        # 5. Export (95% - 100%) ----------------------------------------------
         progress("export", "Building Excel file...", 0.95)
         label = "all" if parsed["category"] == "all" else "_".join(categories[:3])
-        to_export = matched or filter_leads(leads, [])  # nothing matched: export everything
+        # Nothing matched: export every lead that still meets the phone requirement.
+        to_export = matched or filter_leads(
+            leads, ["has_phone"] if config.REQUIRE_PHONE and "no_phone" not in rules else [])
+        result.exported = to_export
         result.output_path = step("Excel export", export_to_excel, to_export,
                                   category=label, location=location)
         if result.output_path is None:  # don't lose the work

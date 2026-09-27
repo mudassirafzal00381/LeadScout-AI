@@ -46,7 +46,15 @@ OSM_REQUEST_DELAY = 1.0
 MAPS_DELAY_RANGE = (1.5, 4.0)
 # Most Google Maps listings opened per category in one search, whatever the
 # "max results" setting in the web app (keeps browsing light; see maps_collector).
-MAPS_MAX_RESULTS_CAP = 25
+MAPS_MAX_RESULTS_CAP = 40
+
+# --- Phone numbers ---
+# Every lead must have a phone number: businesses found without one are looked
+# up by name on Google Maps (up to PHONE_LOOKUP_MAX per search, ~10 s each), and
+# those still without a phone are left out of the results.
+# env: LEADSCOUT_REQUIRE_PHONE ("1"/"0")
+REQUIRE_PHONE = os.environ.get("LEADSCOUT_REQUIRE_PHONE", "1") != "0"
+PHONE_LOOKUP_MAX = 25
 MAPS_PAGE_TIMEOUT = 30  # seconds to wait for a Google Maps page to load
 ENRICHMENT_REQUEST_DELAY = 1.5
 

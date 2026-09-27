@@ -224,12 +224,15 @@ def save_to_history(text: str, parsed: dict, result) -> dict:
         "time": datetime.now().strftime("%H:%M"),
         "parsed": parsed,
         # Nothing matched: show every business found (the Excel file has them all too).
-        "rows": table_rows(result.matched or result.leads),
+        "rows": table_rows(result.matched or result.exported),
         "total": len(result.leads),
         "matched": len(result.matched),
         "filters_applied": result.filters_applied,
         "average_score": result.average_score,
         "errors": list(result.errors),
+        "phones_found": result.phones_found,
+        "phones_looked_up": result.phones_looked_up,
+        "dropped_no_phone": result.dropped_no_phone,
         "seconds": result.seconds,
         "file_name": output.name if output else None,
         "file_bytes": output.read_bytes() if output and output.exists() else None,
@@ -324,6 +327,7 @@ _COUNT_RE = re.compile(r"^(\d+) found on ")
 _UNIQUE_RE = re.compile(r"^(\d+) unique businesses")
 _MATCH_RE = re.compile(r"^(\d+) of \d+ match")
 _ITEM_RE = re.compile(r"^\[(\d+)/(\d+)\]")
+_PHONE_RE = re.compile(r"\+\d{9,}")
 
 if find:
     if not request["location"]:
@@ -337,14 +341,14 @@ if find:
         left, right = st.columns([1, 1.25], gap="medium")
         left.markdown(ui.radar(), unsafe_allow_html=True)  # rendered once: animation never restarts
         live = right.empty()
-        progress = {"stage": "collect", "fraction": 0.0, "unique": 0, "pending": 0,
+        progress = {"stage": "collect", "fraction": 0.0, "unique": 0, "pending": 0, "phones": 0,
                     "websites": "–", "matched": "–", "now": "Starting up…", "notes": [],
                     "span": (0.0, 0.0)}
 
         def render() -> None:
             live.markdown(ui.live_panel(
                 progress["stage"], progress["fraction"], int(time.monotonic() - started),
-                progress["unique"] + progress["pending"], progress["websites"],
+                progress["unique"] + progress["pending"], progress["phones"], progress["websites"],
                 progress["matched"], progress["now"], progress["notes"], GOOGLE_MAPS_DEFAULT),
                 unsafe_allow_html=True)
 
@@ -360,6 +364,11 @@ if find:
                     progress["matched"] = m.group(1)
                 elif m := _ITEM_RE.match(message):
                     done_items, total_items = int(m.group(1)), int(m.group(2))
+                    # Count phone numbers as Google Maps listings, lookups and websites report them.
+                    if progress["stage"] in ("maps", "phones") and _PHONE_RE.search(message.replace(" ", "")):
+                        progress["phones"] += 1
+                    elif progress["stage"] == "enrich" and "phone=+" in message.replace(" ", ""):
+                        progress["phones"] += 1
                     if progress["stage"] == "enrich":
                         progress["websites"] = f"{done_items}/{total_items}"
                     # Move the bar within the current long step (Google Maps listings,
@@ -376,6 +385,7 @@ if find:
                 # Range the bar may fill during this step (see modules.pipeline fractions).
                 share = 0.70 / len(request["categories"])
                 progress["span"] = {"maps": (fraction, fraction + share * 0.8),
+                                    "phones": (fraction, 0.72),
                                     "enrich": (fraction, 0.90)}.get(stage, (fraction, fraction))
             render()
 
@@ -421,14 +431,19 @@ if entry:
         f"{describe_filters(entry['parsed']['filters'])}"), unsafe_allow_html=True)
 
     secs = int(entry["seconds"] or 0)
+    with_email = sum(1 for r in entry["rows"] if r.get("Email"))
     st.markdown(ui.metrics([
-        ("🏢", entry["total"], "Total leads found"),
-        ("🎯", entry["matched"] if entry["filters_applied"] else "n/a", "Leads matching filters"),
+        ("📞", entry["matched"] if entry["filters_applied"] else "n/a", "Leads with phone number"),
+        ("✉️", with_email, "Of those, with email"),
         ("🔥", f"{entry['average_score']:.0f}" if entry["average_score"] is not None else "–",
          "Average lead score"),
         ("⏱️", f"{secs // 60}m {secs % 60:02d}s", "Search time"),
     ]), unsafe_allow_html=True)
 
+    if entry.get("dropped_no_phone") or entry.get("phones_looked_up"):
+        st.info(f"📞 {entry['total']} businesses found. {entry.get('phones_found', 0)} phone numbers "
+                f"were found by looking businesses up on Google Maps; "
+                f"{entry.get('dropped_no_phone', 0)} businesses without any phone number were left out.")
     if entry["errors"]:
         st.warning(
             "Some steps had problems, so these results may be incomplete:\n\n"
