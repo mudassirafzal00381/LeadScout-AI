@@ -71,9 +71,11 @@ ALL_CATEGORIES_OSM_MAX = 50
 ALL_CATEGORIES_MAPS_MAX = 10
 
 # --- Data cleaning ---
-# Country calling code used to convert local numbers ("0321...") to "+92321...".
-# env: LEADSCOUT_PHONE_COUNTRY_CODE  (digits only, e.g. "92" Pakistan, "1" USA)
-DEFAULT_PHONE_COUNTRY_CODE = os.environ.get("LEADSCOUT_PHONE_COUNTRY_CODE", "92").lstrip("+")
+# Local phone numbers ("0321...", "(212) 555...") are converted to international
+# format using the country of the city being searched (found automatically).
+# This region is only the fallback when the country can't be determined.
+# env: LEADSCOUT_PHONE_REGION  (two-letter country code, e.g. "PK", "US", "GB")
+DEFAULT_PHONE_REGION = os.environ.get("LEADSCOUT_PHONE_REGION", "PK").upper()
 
 # --- HTTP ---
 REQUEST_TIMEOUT = 15  # seconds

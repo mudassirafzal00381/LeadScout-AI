@@ -11,20 +11,25 @@ echo 5-10 minutes and needs an internet connection.
 echo.
 
 REM --- 1. Find Python 3.11 (or install it) ------------------------------
+REM Python 3.11 is preferred; 3.12 and 3.13 also work.
 set "PY="
-py -3.11 -c "import sys" >nul 2>&1 && set "PY=py -3.11"
-if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" set PY="%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
-if not defined PY if exist "%ProgramFiles%\Python311\python.exe" set PY="%ProgramFiles%\Python311\python.exe"
+for %%V in (3.11 3.12 3.13) do (
+    if not defined PY py -%%V -c "import sys" >nul 2>&1 && set "PY=py -%%V"
+)
+for %%V in (311 312 313) do (
+    if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe" set PY="%LOCALAPPDATA%\Programs\Python\Python%%V\python.exe"
+    if not defined PY if exist "%ProgramFiles%\Python%%V\python.exe" set PY="%ProgramFiles%\Python%%V\python.exe"
+)
 
 if not defined PY (
-    echo [1/4] Python 3.11 not found - installing it from Microsoft's app store service winget...
+    echo [1/4] Python not found - installing Python 3.11 with winget, Windows' app installer...
     where winget >nul 2>&1
     if errorlevel 1 goto :nopython
     winget install -e --id Python.Python.3.11 --scope user --silent --accept-package-agreements --accept-source-agreements
 )
 if not defined PY if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" set PY="%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
 if not defined PY goto :nopython
-echo [1/4] Python 3.11 found.
+echo [1/4] Python found.
 
 REM Windows limits file paths to 260 characters and some libraries install
 REM deep folders, so the LeadScout AI folder itself must have a short path.

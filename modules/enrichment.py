@@ -242,31 +242,23 @@ def extract_email(soup: BeautifulSoup, website: str) -> str:
 
 # --- Public API --------------------------------------------------------------
 
-# Phone-like text: optional +/00, then digits with spaces, dashes, dots or brackets.
-_PHONE_TEXT_RE = re.compile(r"(?<![\w/])(?:\+|00)?\(?\d[\d\s().-]{7,17}\d(?![\w/])")
-
-
 def extract_phone(soup: BeautifulSoup) -> str:
-    """Return the most likely business phone on the page (normalized), or ""."""
-    from modules.merge import normalize_phone
+    """Return the most likely business phone on the page (international format), or ""."""
+    import phonenumbers
 
-    candidates = []
+    from modules.merge import normalize_phone, phone_region
+
     for a in soup.select('a[href^="tel:" i]'):  # click-to-call links are the most reliable
-        candidates.append(urllib.parse.unquote(a["href"][4:]))
+        number = normalize_phone(urllib.parse.unquote(a["href"][4:])).split("; ")[0]
+        if number.startswith("+"):
+            return number
     for tag in soup(["script", "style", "noscript"]):
         tag.decompose()
-    text = soup.get_text(" ")
-    for match in _PHONE_TEXT_RE.finditer(text):
-        raw = match.group()
-        digits = re.sub(r"\D", "", raw)
-        # Real phone numbers: 10-13 digits, starting like a national or international number.
-        if 10 <= len(digits) <= 13 and (raw.lstrip("( ").startswith(("+", "0")) or
-                                        digits.startswith(config.DEFAULT_PHONE_COUNTRY_CODE)):
-            candidates.append(raw)
-    for raw in candidates:
-        number = normalize_phone(raw).split("; ")[0]
-        if number.startswith("+") and 11 <= len(number) <= 14:
-            return number
+    text = soup.get_text(" ")[:200_000]
+    matcher = phonenumbers.PhoneNumberMatcher(text, phone_region(),
+                                              leniency=phonenumbers.Leniency.VALID, max_tries=200)
+    for match in matcher:
+        return phonenumbers.format_number(match.number, phonenumbers.PhoneNumberFormat.E164)
     return ""
 
 

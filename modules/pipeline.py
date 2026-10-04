@@ -19,9 +19,8 @@ import config
 from modules.enrichment import enrich_with_social_and_contact
 from modules.excel_export import build_filename, export_to_excel
 from modules.filters import filter_leads, score_leads
-from modules.maps_collector import collect_from_google_maps, lookup_missing_details
-from modules.merge import merge_and_deduplicate
-from modules.osm_collector import collect_from_osm
+from modules.merge import merge_and_deduplicate, set_phone_region
+from modules.osm_collector import collect_from_osm, resolve_location
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +70,26 @@ class _ForwardModuleLogs(logging.Handler):
                 pass
 
 
+def _load_google_maps():
+    """Import the Google Maps collector (Playwright) only when a search needs it.
+
+    On Windows with Smart App Control, loading Playwright's helper library can
+    occasionally be blocked for a moment while Windows checks it online. Retrying
+    usually works; if not, the search continues without Google Maps instead of
+    the whole app failing to start. Returns (module, None) or (None, error text).
+    """
+    last_error = ""
+    for attempt in range(3):
+        try:
+            from modules import maps_collector
+            return maps_collector, None
+        except Exception as exc:  # noqa: BLE001 - ImportError / OSError from a blocked DLL
+            last_error = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+            log.warning("Loading Google Maps support failed (attempt %d): %s", attempt + 1, last_error)
+            time.sleep(2)
+    return None, last_error
+
+
 def _save_json(leads: list[dict], path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(leads, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
@@ -99,6 +118,16 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
     maps_max = maps_max or (config.ALL_CATEGORIES_MAPS_MAX if many else 20)
     if use_google_maps is None:
         use_google_maps = config.GOOGLE_MAPS_ENABLED
+    maps_module = None
+    if use_google_maps:
+        maps_module, maps_error = _load_google_maps()
+        if maps_module is None:
+            use_google_maps = False
+            message = ("Google Maps could not start (Windows blocked a component: "
+                       f"{maps_error}). Continuing with OpenStreetMap only - close and restart "
+                       "LeadScout AI to try again.")
+            result.errors.append(message)
+            progress("warning", message, None)
     log.info("Pipeline start: %s (osm_max=%s, maps_max=%s)", parsed, osm_max, maps_max)
 
     def step(name: str, func, *args, fallback=None, **kwargs):
@@ -118,6 +147,21 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
     try:
         # 1. Collect (0% - 70%) ------------------------------------------------
         progress("collect", f"Collecting businesses in {location}...", 0.0)
+
+        # Check the place exists (and isn't a whole country) before spending
+        # minutes on it, and read phone numbers in that country's format.
+        try:
+            place = resolve_location(location)
+        except ValueError as exc:  # not found, or a whole country/state
+            result.errors.append(str(exc))
+            progress("warning", str(exc), None)
+            return result
+        except Exception as exc:  # noqa: BLE001 - e.g. no internet: try anyway
+            log.warning("Could not check location %r: %s", location, exc)
+            place = {}
+        set_phone_region(place.get("country_code"))
+        log.info("Location: %s (country %s)", place.get("name", location),
+                 place.get("country_code") or "unknown")
         leads: list[dict] = []
         share = 0.70 / len(categories)
         try:
@@ -133,7 +177,7 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
 
                 if use_google_maps:
                     progress("maps", f"{prefix}Collecting from Google Maps...", base + share * 0.15)
-                    maps = step(f"Google Maps ({label})", collect_from_google_maps,
+                    maps = step(f"Google Maps ({label})", maps_module.collect_from_google_maps,
                                 category, location, maps_max, fallback=[])
                     progress("detail", f"{len(maps)} found on Google Maps", None)
                 else:
@@ -165,7 +209,7 @@ def run_pipeline(parsed: dict, *, osm_max: int | None = None, maps_max: int | No
             n = min(len(missing), config.PHONE_LOOKUP_MAX)
             progress("phones", f"Finding phone numbers on Google Maps ({n} businesses)...", 0.60)
             try:
-                stats = step("Phone lookup", lookup_missing_details, missing, location,
+                stats = step("Phone lookup", maps_module.lookup_missing_details, missing, location,
                              config.PHONE_LOOKUP_MAX, fallback={})
             except KeyboardInterrupt:
                 result.stopped_early = True

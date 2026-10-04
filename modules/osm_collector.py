@@ -13,6 +13,7 @@ config.OSM_REQUEST_DELAY between requests.
 import logging
 import threading
 import time
+from functools import lru_cache
 
 import requests
 
@@ -47,6 +48,39 @@ CATEGORY_TAGS = {
                      ("shop", "general"), ("shop", "shoes"), ("shop", "electronics")],
     "real_estate": [("office", "estate_agent")],
     "lawyer": [("office", "lawyer")],
+    "plumber": [("craft", "plumber")],
+    "electrician": [("craft", "electrician")],
+    "roofer": [("craft", "roofer")],
+    "painter": [("craft", "painter")],
+    "carpenter": [("craft", "carpenter")],
+    "hvac": [("craft", "hvac")],
+    "landscaper": [("craft", "gardener"), ("shop", "garden_centre")],
+    "builder": [("craft", "builder"), ("office", "construction_company")],
+    "cleaning": [("shop", "dry_cleaning"), ("shop", "laundry"), ("office", "cleaning")],
+    "florist": [("shop", "florist")],
+    "photographer": [("craft", "photographer"), ("shop", "photo")],
+    "accountant": [("office", "accountant"), ("office", "tax_advisor")],
+    "insurance": [("office", "insurance")],
+    "travel_agency": [("shop", "travel_agency"), ("office", "travel_agent")],
+    "optician": [("shop", "optician")],
+    "physiotherapist": [("healthcare", "physiotherapist")],
+    "chiropractor": [("healthcare", "chiropractor")],
+    "car_wash": [("amenity", "car_wash")],
+    "car_dealer": [("shop", "car")],
+    "furniture": [("shop", "furniture")],
+    "jewelry": [("shop", "jewelry")],
+    "pet_store": [("shop", "pet"), ("shop", "pet_grooming")],
+    "tattoo": [("shop", "tattoo")],
+    "nail_salon": [("shop", "beauty"), ("beauty", "nails")],
+    "barber": [("shop", "hairdresser")],
+    "yoga": [("sport", "yoga"), ("leisure", "fitness_centre")],
+    "daycare": [("amenity", "kindergarten"), ("amenity", "childcare")],
+    "driving_school": [("amenity", "driving_school")],
+    "printing": [("shop", "copyshop"), ("craft", "printer")],
+    "hardware": [("shop", "hardware"), ("shop", "doityourself")],
+    "electronics": [("shop", "electronics"), ("shop", "mobile_phone")],
+    "clothing": [("shop", "clothes")],
+    "bookstore": [("shop", "books")],
     "veterinary": [("amenity", "veterinary")],
 }
 FALLBACK_KEYS = ["amenity", "shop", "healthcare", "leisure", "tourism", "craft", "office"]
@@ -81,18 +115,60 @@ def _get(url: str, params: dict, timeout: float) -> requests.Response:
     raise RuntimeError("unreachable")
 
 
-def geocode_bbox(location: str) -> tuple[float, float, float, float]:
-    """Return (south, west, north, east) for a place name using Nominatim."""
+class LocationTooBroad(ValueError):
+    """The location is a whole country or state - too large to search usefully."""
+
+
+# Place types that are too large to search for local businesses.
+_BROAD_TYPES = {"country", "state", "region", "province", "continent", "state_district"}
+_MAX_AREA_DEG2 = 1.0  # larger city areas (e.g. ones that include islands) are narrowed
+
+
+@lru_cache(maxsize=256)
+def resolve_location(location: str) -> dict:
+    """Look up a place with Nominatim.
+
+    Returns {"name", "bbox": (south, west, north, east), "lat", "lon",
+    "country_code" (e.g. "US"), "type"}. Raises ValueError if the place is not
+    found and LocationTooBroad for countries/states.
+    """
     resp = _get(
         config.NOMINATIM_URL,
-        {"q": location, "format": "jsonv2", "limit": 1, "accept-language": "en"},
+        {"q": location, "format": "jsonv2", "limit": 1, "accept-language": "en",
+         "addressdetails": 1},
         timeout=config.REQUEST_TIMEOUT,
     )
     results = resp.json()
     if not results:
-        raise ValueError(f"Location not found: {location!r}")
-    south, north, west, east = (float(v) for v in results[0]["boundingbox"])
-    return south, west, north, east
+        raise ValueError(f"Location not found: {location!r}. Check the spelling, or add the "
+                         "country, e.g. \"Springfield, Illinois\".")
+    r = results[0]
+    south, north, west, east = (float(v) for v in r["boundingbox"])
+    kind = (r.get("addresstype") or r.get("type") or "").lower()
+    area = (north - south) * (east - west)
+    city_like = kind in {"city", "town", "village", "suburb", "municipality", "borough",
+                         "city_district", "quarter", "neighbourhood", "hamlet"}
+    if kind in _BROAD_TYPES or (area > 50 and not city_like):
+        raise LocationTooBroad(
+            f"\"{location}\" is a whole {kind or 'region'} - too large to search for local "
+            "businesses. Please name a city, e.g. \"restaurants in New York\" or "
+            "\"salons in Lahore\".")
+    lat, lon = float(r["lat"]), float(r["lon"])
+    if area > _MAX_AREA_DEG2:  # e.g. a city whose boundary includes far-away islands
+        log.info("Large area for %s (%.1f deg2): searching around its centre", location, area)
+        south, north, west, east = lat - 0.25, lat + 0.25, lon - 0.3, lon + 0.3
+    return {
+        "name": r.get("display_name", location),
+        "bbox": (south, west, north, east),
+        "lat": lat, "lon": lon,
+        "country_code": ((r.get("address") or {}).get("country_code") or "").upper(),
+        "type": kind,
+    }
+
+
+def geocode_bbox(location: str) -> tuple[float, float, float, float]:
+    """Return (south, west, north, east) for a place name using Nominatim."""
+    return resolve_location(location)["bbox"]
 
 
 def _build_query(category: str, bbox: tuple, max_results: int) -> str:

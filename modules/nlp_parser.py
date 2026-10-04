@@ -20,7 +20,7 @@ CATEGORY_SYNONYMS = {
     "fast_food": ["fast food", "burger joint", "pizza place", "pizzeria"],
     "bakery": ["bakery", "bakeries", "cake shop", "patisserie"],
     "salon": ["salon", "hair salon", "beauty salon", "beauty parlour", "beauty parlor", "parlour",
-              "parlor", "barber", "barbershop", "hairdresser", "nail salon"],
+              "parlor", "hairdresser"],
     "spa": ["spa", "massage center", "massage centre"],
     "gym": ["gym", "fitness center", "fitness centre", "fitness studio", "health club"],
     "clinic": ["clinic", "medical center", "medical centre", "health center", "health centre"],
@@ -29,12 +29,45 @@ CATEGORY_SYNONYMS = {
     "pharmacy": ["pharmacy", "pharmacies", "chemist", "drugstore", "medical store"],
     "hospital": ["hospital"],
     "hotel": ["hotel", "guest house", "guesthouse", "motel", "hostel"],
-    "retail_store": ["retail store", "retail shop", "retailer", "store", "shop", "boutique",
-                     "clothing store", "clothing shop"],
+    "retail_store": ["retail store", "retail shop", "retailer", "store", "shop"],
     "supermarket": ["supermarket", "grocery store", "grocery", "groceries", "mart"],
     "real_estate": ["real estate", "estate agent", "property dealer", "realtor", "real estate agent"],
     "car_repair": ["car repair", "auto repair", "mechanic", "workshop", "garage"],
-    "lawyer": ["lawyer", "law firm", "attorney", "advocate"],
+    "lawyer": ["lawyer", "law firm", "attorney", "advocate", "solicitor"],
+    "plumber": ["plumber", "plumbing", "plumbing company"],
+    "electrician": ["electrician", "electrical contractor", "electrical company"],
+    "roofer": ["roofer", "roofing", "roofing company", "roofing contractor"],
+    "painter": ["painter", "painting contractor", "house painter"],
+    "carpenter": ["carpenter", "joiner", "carpentry"],
+    "hvac": ["hvac", "air conditioning", "ac repair", "heating and cooling"],
+    "landscaper": ["landscaper", "landscaping", "gardener", "lawn care"],
+    "builder": ["builder", "contractor", "construction company", "general contractor"],
+    "cleaning": ["cleaning company", "cleaning service", "cleaner", "dry cleaner", "laundry",
+                 "maid service", "janitorial"],
+    "florist": ["florist", "flower shop"],
+    "photographer": ["photographer", "photography studio", "photo studio"],
+    "accountant": ["accountant", "accounting firm", "cpa", "bookkeeper", "tax advisor"],
+    "insurance": ["insurance agent", "insurance agency", "insurance broker"],
+    "travel_agency": ["travel agency", "travel agent", "tour operator"],
+    "optician": ["optician", "optometrist", "eye clinic", "optical store"],
+    "physiotherapist": ["physiotherapist", "physical therapist", "physiotherapy", "physio"],
+    "chiropractor": ["chiropractor"],
+    "car_wash": ["car wash", "car detailing", "auto detailing"],
+    "car_dealer": ["car dealer", "car dealership", "auto dealer", "car showroom"],
+    "furniture": ["furniture store", "furniture shop"],
+    "jewelry": ["jewelry store", "jeweller", "jeweler", "jewellery shop", "jewelry shop"],
+    "pet_store": ["pet store", "pet shop", "pet grooming", "pet groomer"],
+    "tattoo": ["tattoo studio", "tattoo shop", "tattoo parlor", "tattoo parlour"],
+    "nail_salon": ["nail salon", "nail studio", "nail bar"],
+    "barber": ["barber", "barbershop", "barber shop"],
+    "yoga": ["yoga studio", "pilates studio"],
+    "daycare": ["daycare", "day care", "nursery", "preschool", "childcare"],
+    "driving_school": ["driving school"],
+    "printing": ["print shop", "printing shop", "printing press", "printer"],
+    "hardware": ["hardware store", "hardware shop"],
+    "electronics": ["electronics store", "mobile shop", "phone shop", "electronics shop"],
+    "clothing": ["clothing store", "boutique", "fashion store", "clothing shop"],
+    "bookstore": ["bookstore", "book shop", "bookshop"],
     "school": ["school", "academy", "tuition center", "tuition centre"],
     "veterinary": ["vet", "veterinary", "veterinarian", "pet clinic"],
 }
@@ -227,6 +260,46 @@ def parse_filter_text(text: str) -> tuple[list, list[str]]:
 
 # --- Public API --------------------------------------------------------------
 
+# Words that mean "any business" rather than a specific type.
+_GENERIC = {"business", "businesses", "company", "companies", "place", "places", "lead", "leads",
+            "client", "clients", "customer", "customers", "local business", "local businesses",
+            "small business", "small businesses", "smb", "smbs", "firm", "firms", "brand", "brands",
+            "all", "everything", "anything"}
+_LEADING = re.compile(r"^(?:please\s+)?(?:find|show|get|search|list|give)(?:\s+me)?\s+|"
+                      r"^(?:all|some|any|the|local|small)\s+", re.IGNORECASE)
+
+
+def _singular(word: str) -> str:
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith(("ches", "shes", "sses", "xes")):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        return word[:-1]
+    return word
+
+
+def _custom_category(text: str) -> str | None:
+    """A business type we have no list entry for, e.g. "solar installers in Austin" -> "solar installer".
+
+    Google Maps understands any business type, and OpenStreetMap is searched for
+    the same word, so unknown types still work instead of falling back to "all".
+    """
+    match = re.match(r"^(.+?)\s+(?:in|near|around|at|within)\s+", text, re.IGNORECASE)
+    if not match:
+        return None
+    phrase = match.group(1).strip().lower()
+    for _ in range(3):  # strip "find me all local ..." step by step
+        phrase = _LEADING.sub("", phrase).strip()
+    phrase = re.sub(r"[^\w\s&'-]", "", phrase)
+    words = phrase.split()
+    if not words or phrase in _GENERIC or len(words) > 4:
+        return None
+    words[-1] = _singular(words[-1])
+    custom = " ".join(words)
+    return None if custom in _GENERIC else custom
+
+
 def parse_user_request(text: str) -> dict:
     """Turn a plain-language request into {category, categories, location, filters}.
 
@@ -237,7 +310,7 @@ def parse_user_request(text: str) -> dict:
     filters:    filter rules for modules.filters.filter_leads, e.g. ["no_website"].
     """
     text = (text or "").strip()
-    categories = _find_categories(text)
+    categories = _find_categories(text) or [c for c in [_custom_category(text)] if c]
     if not categories:
         category = "all"
         categories = list(config.DEFAULT_CATEGORIES)

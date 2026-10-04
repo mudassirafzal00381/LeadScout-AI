@@ -6,9 +6,12 @@ the same phone number). Location matters because chains share names: two
 "KFC" branches across town must stay separate.
 """
 
+import contextvars
 import math
 import re
 import urllib.parse
+
+import phonenumbers
 
 from rapidfuzz import fuzz
 
@@ -33,30 +36,45 @@ FAR_METRES = 1000     # never merge leads further apart than this
 
 # --- Normalization -----------------------------------------------------------
 
-def normalize_phone(raw: str, country_code: str = config.DEFAULT_PHONE_COUNTRY_CODE) -> str:
-    """Normalize one or more phone numbers to E.164, e.g. '0321-4481300' -> '+923214481300'.
+# Country of the current search (two-letter code), set by modules.pipeline from
+# the searched city. Local numbers are read as belonging to this country.
+_PHONE_REGION: contextvars.ContextVar = contextvars.ContextVar("phone_region", default=None)
 
-    Multiple numbers (separated by ; , / or 'or') are each normalized and
-    joined with '; '. Unparseable numbers are kept as digits.
+
+def set_phone_region(region: str | None) -> None:
+    _PHONE_REGION.set((region or "").upper() or None)
+
+
+def phone_region() -> str:
+    return _PHONE_REGION.get() or config.DEFAULT_PHONE_REGION
+
+
+def normalize_phone(raw: str, region: str | None = None) -> str:
+    """Normalize one or more phone numbers to international E.164 format.
+
+    Local numbers are read in the country of the current search, e.g.
+    '0321-4481300' (PK) -> '+923214481300', '(212) 555-0123' (US) ->
+    '+12125550123'. Several numbers (separated by ; , / or 'or') are each
+    normalized and joined with '; '. Text that isn't a possible phone number
+    is kept as digits rather than guessed.
     """
     if not raw:
         return ""
+    region = (region or phone_region()).upper()
     numbers = []
     for part in re.split(r"[;,/]|\bor\b", raw):
-        has_plus = part.strip().startswith("+")
         digits = re.sub(r"\D", "", part)
         if len(digits) < 6:
             continue
-        if has_plus:
-            number = "+" + digits
-        elif digits.startswith("00"):
-            number = "+" + digits[2:]
-        elif digits.startswith("0"):
-            number = f"+{country_code}{digits[1:]}"
-        elif digits.startswith(country_code) and len(digits) > 10:
-            number = "+" + digits
-        else:
-            number = digits  # no country info; leave as-is rather than guess
+        candidate = part.strip()
+        if candidate.startswith("00"):
+            candidate = "+" + candidate[2:]
+        try:
+            parsed = phonenumbers.parse(candidate, region)
+            number = (phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+                      if phonenumbers.is_possible_number(parsed) else digits)
+        except phonenumbers.NumberParseException:
+            number = digits
         if number not in numbers:
             numbers.append(number)
     return "; ".join(numbers)

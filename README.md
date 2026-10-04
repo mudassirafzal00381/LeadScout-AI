@@ -66,6 +66,29 @@ only from this computer. In addition, without a password the app refuses
 visitors from other devices. Excel files are also saved in `output/`, and error details in
 `logs/`.
 
+## Works worldwide
+
+Search any city in any country: `plumbers in London`, `restaurants in New York`,
+`dentists in Dubai`, `salons in Karachi`. The country is detected from the city,
+so phone numbers are stored in international format for that country (`+1`,
+`+44`, `+971`, `+92`, ...). Whole countries or states ("USA", "Texas") are
+refused with a request to name a city. Common business types are recognised
+(about 60, including trades such as plumbers, roofers and electricians); any
+other type is searched exactly as written.
+
+Tested with real searches in New York, London, Dubai, Toronto, Sydney, Paris
+and several Pakistani cities.
+
+## Tests
+
+```bash
+.venv\Scripts\python.exe testsun_tests.py
+```
+
+Runs offline in about a minute: request parsing, phone formats for 12
+countries, reading websites, merging, scoring, Excel export and the web app
+screens (with stand-in search results).
+
 ## Project structure
 
 ```
@@ -74,6 +97,10 @@ leadscout/
 ├── main.py              # Command-line interface + environment check
 ├── config.py            # Settings: rate limits, categories, folders, browsers
 ├── dev_tests.py         # Developer test commands (main.py --test-*)
+├── tests/run_tests.py   # Offline regression tests
+├── launch.py            # Starts the web app and opens the browser
+├── client/              # Installer + start scripts for client PCs
+├── tools/               # Builds the client zip (make_client_package.py)
 ├── modules/
 │   ├── pipeline.py      # The full pipeline, shared by app.py and main.py
 │   ├── nlp_parser.py    # Plain-language request -> category/location/filters
@@ -171,7 +198,7 @@ time. Choose "More info" → "Run anyway", or code-sign the exe for production.
 | `LEADSCOUT_BROWSER_CHANNELS` | `chrome,msedge` on Windows, `bundled` elsewhere | Browsers to try, in order: `chrome`, `msedge`, `bundled` |
 | `LEADSCOUT_HEADLESS` | `1` | `0` shows the browser window |
 | `LEADSCOUT_LOG_DIR` | `logs` next to the app | Where daily log files are written |
-| `LEADSCOUT_PHONE_COUNTRY_CODE` | `92` (Pakistan) | Country code for local phone numbers |
+| `LEADSCOUT_PHONE_REGION` | `PK` | Fallback country for local phone numbers (normally detected from the searched city) |
 | `LEADSCOUT_PASSWORD` | (unset = no login) | Password for the web app. Set it only as a secret, never in code |
 | `LEADSCOUT_GOOGLE_MAPS` | `1` | `0` skips Google Maps (OpenStreetMap only) |
 | `LEADSCOUT_REQUIRE_PHONE` | `1` | Every lead must have a phone number; missing ones are looked up on Google Maps (up to `PHONE_LOOKUP_MAX` per search) and leads still without one are left out. `0` keeps them |
